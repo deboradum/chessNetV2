@@ -1,7 +1,9 @@
 import os
 import math
+import json
 import sqlite3
 import chess.pgn
+from constants import BIN_SIZE
 
 
 def get_win_perc(centipawns):
@@ -14,7 +16,7 @@ def extract_eval_from_comment(comment):
             eval_str = comment.split("[%eval ")[1].split("]")[0]
             eval_value = float(eval_str)
             return eval_value
-        except Exception as _:
+        except Exception as e:
             return None
     return None
 
@@ -66,9 +68,12 @@ def main(filepaths):
         """CREATE TABLE IF NOT EXISTS positions (
                fen TEXT PRIMARY KEY,
                padded_fen TEXT,
-               win_perc REAL
+               win_perc REAL,
+               active_bin INT,
+               ascii_codes TEXT
            )"""
     )
+
     for filepath in filepaths:
         pgn = open(filepath)
         g = chess.pgn.read_game(pgn)
@@ -94,13 +99,15 @@ def main(filepaths):
 
                 fen = board.fen()
                 padded_fen = pad_fen(fen)
-
                 win_perc = get_win_perc(eval_value * 100)
-                positions.append((fen, padded_fen, win_perc))
+                active_bin = min(int(win_perc / (1/BIN_SIZE)), 127)
+                ascii_codes = json.dumps([ord(c) for c in padded_fen])
+
+                positions.append((fen, padded_fen, win_perc, active_bin, ascii_codes))
 
             cursor = conn.cursor()
             cursor.executemany(
-                "INSERT OR IGNORE INTO positions (fen, padded_fen, win_perc) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
                 positions,
             )
             conn.commit()
