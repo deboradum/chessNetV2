@@ -1,2 +1,3 @@
 
 BIN_SIZE = 128
+INPUT_DIM = 86
