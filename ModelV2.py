@@ -47,24 +47,32 @@ class TransformerBlock(nn.Module):
 
 
 class ChessNet(nn.Module):
-    def __init__(self, num_layers, num_heads, vocab_size, embed_dim):
+    def __init__(self, num_layers, num_heads, vocab_size, embed_dim, max_seq_len=86):
         super().__init__()
         self.token_embeddings = nn.Embedding(vocab_size, embed_dim)
+        self.positional_embeddings = nn.Embedding(max_seq_len, embed_dim)
         self.postLayerNorm = False
 
         self.layers = []
         for _ in range(num_layers):
             self.layers.append(TransformerBlock(embed_dim, 8))
 
-        self.final_layer = nn.Linear(embed_dim, BIN_SIZE + INPUT_DIM)
+        self.final_layer = nn.Linear(embed_dim, BIN_SIZE)
 
     def __call__(self, x):
         # TODO: shift enzo
         b, seq_len = x.shape
         h = self.token_embeddings(x)
 
+        positions = mx.arange(seq_len).reshape(1, seq_len)  # Create a 1D array of shape (1, seq_len)
+        positions = mx.tile(positions, (b, 1))  # Repeat the array b times to create shape (b, seq_len)
+
+        h += self.positional_embeddings(positions)
+
         for layer in self.layers:
             h = layer(h)
+
+        h = mx.mean(h, axis=1)
 
         if self.postLayerNorm:
             h = self.postLayerNorm(h)
