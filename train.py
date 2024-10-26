@@ -5,7 +5,8 @@ import mlx.core as mx
 import mlx.data as dx
 import mlx.optimizers as optim
 
-from Model import ChessNet
+# from Model import ChessNet
+from ModelV2 import ChessNet
 
 from datasetGen.factories import buildinWinsIterableFactory
 
@@ -46,10 +47,9 @@ def train(
         )
         for batch in train_dset:
             X, y = mx.array(batch["x"]), mx.array(batch["y"])
-            X = mx.expand_dims(X, 0)
             loss, grads = loss_and_grad_fn(model, X, y)
             acc = eval_fn(model, X, y)
-            # print("loss:", float(loss), "acc:", float(acc))
+            print("loss:", float(loss), "acc:", float(acc))
             optimizer.update(model, grads)
             mx.eval(model.parameters(), optimizer.state)
             if float(acc) > 0.9:
@@ -93,9 +93,9 @@ optimizers = {
 
 # Loop through each optimizer and its corresponding learning rates
 for optimizer_name, learning_rates in optimizers.items():
-    for batch_size in [1024, 2048, 4096]:
+    for batch_size in [256]:
         for lr in learning_rates:
-            net = ChessNet()
+            net = ChessNet(4, 4, 128, 512)
             print(f"{optimizer_name}, {lr}, {batch_size}")
 
             # Choose the optimizer based on its name

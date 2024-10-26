@@ -5,38 +5,38 @@ from datasetGen.constants import INPUT_DIM, BIN_SIZE
 
 
 class FeedForward(nn.Module):
-    def __init__(self, embedding_dim=64, widening_factor=4):
+    def __init__(self, embedding_dim, widening_factor=4):
         super().__init__()
 
         dim = embedding_dim * widening_factor
 
-        self.l1 = nn.Linear(88, dim, bias=False)
-        self.l2 = nn.Linear(dim, dim, bias=False)
+        self.l1 = nn.Linear(embedding_dim, dim, bias=False)
+        self.l2 = nn.Linear(embedding_dim, dim, bias=False)
         self.silu = nn.SiLU()
         self.final = nn.Linear(dim, embedding_dim, bias=False)
 
-    def __cal__(self, x):
+    def __call__(self, x):
         x1 = self.l1(x)
         x2 = self.l2(x)
         x = self.silu(x1) * x2
 
-        return self.final()
+        return self.final(x)
 
 
-class AttentionBlock(nn.Module):
-    def __init__(self, dims, num_heads):
+class TransformerBlock(nn.Module):
+    def __init__(self, embedding_dim, num_heads):
         super().__init__()
-        self.layerNorm1 = nn.LayerNorm(88)
+        self.layerNorm1 = nn.LayerNorm(embedding_dim)
         self.attention = nn.MultiHeadAttention(
-            88,
+            embedding_dim,
             num_heads,
         )
-        self.layerNorm2 = nn.LayerNorm(88)
-        self.feedForward = FeedForward()
+        self.layerNorm2 = nn.LayerNorm(embedding_dim)
+        self.feedForward = FeedForward(embedding_dim)
 
-    def __cal__(self, x):
+    def __call__(self, x):
         attention_input = self.layerNorm1(x)
-        att = self.attention(attention_input)
+        att = self.attention(attention_input, attention_input, attention_input)
         x += att
 
         mlp_input = self.layerNorm2(x)
@@ -47,32 +47,28 @@ class AttentionBlock(nn.Module):
 
 
 class ChessNet(nn.Module):
-    def __init__(self, num_layers, num_heads, vocab_size, embed_size):
+    def __init__(self, num_layers, num_heads, vocab_size, embed_dim):
         super().__init__()
-        self.token_embeddings = nn.Embedding(vocab_size, embed_size)
+        self.token_embeddings = nn.Embedding(vocab_size, embed_dim)
+        self.postLayerNorm = False
+
         self.layers = []
-
         for _ in range(num_layers):
-            self.layers.append(AttentionBlock(88, 8))
+            self.layers.append(TransformerBlock(embed_dim, 8))
 
-        # TODO: Get size of x here
-        self.final_layer = nn.Linear(88, BIN_SIZE)
-        self.softmax = nn.Softmax()
+        self.final_layer = nn.Linear(embed_dim, BIN_SIZE + INPUT_DIM)
 
     def __call__(self, x):
         # TODO: shift enzo
         b, seq_len = x.shape
-        print(x.shape)
         h = self.token_embeddings(x)
-        print(h.shape)
-        return
+
         for layer in self.layers:
             h = layer(h)
 
         if self.postLayerNorm:
             h = self.postLayerNorm(h)
 
-        if not self.train:
-            h = self.softmax(h)
+        logits = self.final_layer(h)
 
-        return h
+        return logits
