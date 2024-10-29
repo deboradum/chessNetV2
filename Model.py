@@ -62,22 +62,18 @@ class ChessNet(nn.Module):
     def __call__(self, x):
         # TODO: shift enzo
         b, seq_len = x.shape
-        h = self.token_embeddings(x)
 
+        h = self.token_embeddings(x)
         positions = mx.arange(seq_len).reshape(1, seq_len)  # Create a 1D array of shape (1, seq_len)
         positions = mx.tile(positions, (b, 1))  # Repeat the array b times to create shape (b, seq_len)
-
         h += self.positional_embeddings(positions)
 
         for layer in self.layers:
             h = layer(h)
 
-        # h = mx.mean(h, axis=1)
-
         if self.postLayerNorm:
             h = self.postLayerNorm(h)
 
         logits = self.final_layer(h)
-        # print(logits[:, -1, :].shape)
 
-        return logits[:, -1, :]
+        return logits[:, -1, :]  # Only check logits for last token
