@@ -1,9 +1,10 @@
 import json
 import sqlite3
+import mlx.core as mx
 
-# BATCH_SIZE = 4096
-BATCH_SIZE = 1000
+from datasetGen.constants import BIN_SIZE
 
+BATCH_SIZE = 4096
 
 def buildinWinsIterableFactory(db_path):
     def generator():
