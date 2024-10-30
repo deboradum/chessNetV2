@@ -1,0 +1,16 @@
+learning_rate:
+  0.00004
+optimizer:
+  "adam"
+nepochs:
+  5
+batch_size:
+  512
+resume:
+  "" # model.npz
+num_layers:
+  8
+num_heads:
+  8
+emebedding_dim:
+  512

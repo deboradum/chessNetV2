@@ -1,4 +1,5 @@
 import time
+import yaml
 
 import numpy as np
 import mlx.nn as nn
@@ -9,6 +10,7 @@ import mlx.optimizers as optim
 from Model import ChessNet
 
 from datasetGen.factories import buildinWinsIterableFactory
+from datasetGen.constants import BIN_SIZE
 
 
 def test(model, dset, batch_size, eval_fn, num_batches=-1):
@@ -74,7 +76,7 @@ def train(
                 if test_acc > best_acc:
                     model.save_weights("model.npz")
                 stop = time.perf_counter()
-                time_taken = round(stop-start, 2)
+                time_taken = round(stop - start, 2)
                 log_loss_and_acc(
                     log_path,
                     epoch,
@@ -82,7 +84,7 @@ def train(
                     round(np.array(losses).mean(), 2),
                     round(np.array(accs).mean(), 2),
                     round(test_acc, 2),
-                    time_taken
+                    time_taken,
                 )
                 losses = []
                 accs = []
@@ -103,6 +105,9 @@ def eval_fn(model, X, y):
 if __name__ == "__main__":
     mx.random.seed(101)
 
+    with open("train.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
     train_overfit_dset = dx.stream_python_iterable(
         buildinWinsIterableFactory("datasetGen/builtinWinsTrainOVERFIT.db")
     )
@@ -116,12 +121,26 @@ if __name__ == "__main__":
         buildinWinsIterableFactory("datasetGen/builtinWinsVal.db")
     )
 
-    lr = 0.0001
-    optimizer = optim.Adam(lr)
-    nepochs = 5
-    net = ChessNet(8, 8, 128, 512)
-    # net.load_weights("model.npz")
-    batch_size = 512
+    if config["optimizer"] == "adam":
+        optimizer = optim.Adam(config["learning_rate"])
+    else:
+        print(f"{config['optimizer']} optimizer not supported")
 
-    print(f"Training chessNet with op")
-    train(net, train_dset, valid_dset, optimizer, loss_fn, eval_fn, nepochs, batch_size, "adam_5e-5_512bs.csv")
+    net = ChessNet(
+        config["num_layers"], config["num_heads"], BIN_SIZE, config["emebedding_dim"]
+    )
+
+    if config["resume"] != "":
+        net.load_weights(config["resume"])
+
+    train(
+        net,
+        train_dset,
+        valid_dset,
+        optimizer,
+        loss_fn,
+        eval_fn,
+        config["nepochs"],
+        config["batch_size"],
+        "adam_5e-5_512bs.csv",
+    )
