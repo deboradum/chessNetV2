@@ -53,6 +53,8 @@ def train(
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
     init_log_file(log_path)
 
+    best_acc = 0
+
     for epoch in range(nepochs):
         losses = []
         accs = []
@@ -69,6 +71,8 @@ def train(
 
             if i % log_interval == 0:
                 test_acc = test(model, val_dset, batch_size, eval_fn, num_batches=50)
+                if test_acc > best_acc:
+                    model.save_weights("model.npz")
                 stop = time.perf_counter()
                 time_taken = round(stop-start, 2)
                 log_loss_and_acc(
@@ -112,10 +116,11 @@ if __name__ == "__main__":
         buildinWinsIterableFactory("datasetGen/builtinWinsVal.db")
     )
 
-    lr = 0.00005
+    lr = 0.0001
     optimizer = optim.Adam(lr)
     nepochs = 5
     net = ChessNet(8, 8, 128, 512)
+    # net.load_weights("model.npz")
     batch_size = 512
 
     print(f"Training chessNet with op")
