@@ -9,7 +9,8 @@ def create_database(db_name):
                fen TEXT PRIMARY KEY,
                padded_fen TEXT,
                win_perc REAL,
-               active_bin INT,
+               active_bin_128 INT,
+               active_bin_64 INT,
                ascii_codes TEXT
            )"""
     )
@@ -26,7 +27,7 @@ def split_database(input_db):
     overfit_conn = create_database("builtinWinsOverfit.db")
 
     train_count, val_count, test_count, overfit_count = 0, 0, 0, 0
-    batch_size = 1024
+    batch_size = 8192
 
     cursor.execute("SELECT * FROM positions")
     while True:
@@ -39,28 +40,28 @@ def split_database(input_db):
                 # 80% chance for train
                 train_count += 1
                 train_conn.execute(
-                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes) VALUES (?, ?, ?, ?, ?, ?)",
                     row,
                 )
             elif rand_choice < 0.9:
                 # 10% chance for validation
                 val_count += 1
                 val_conn.execute(
-                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes) VALUES (?, ?, ?, ?, ?, ?)",
                     row,
                 )
             else:
                 # 10% chance for test
                 test_count += 1
                 test_conn.execute(
-                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes) VALUES (?, ?, ?, ?, ?, ?)",
                     row,
                 )
-            if rand_choice < 0.005 and overfit_count<2048:
+            if rand_choice < 0.005 and overfit_count<8192:
                 # .5% chance for overfit db, used for testing
                 overfit_count += 1
                 overfit_conn.execute(
-                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes) VALUES (?, ?, ?, ?, ?, ?)",
                     row,
                 )
 
@@ -86,7 +87,7 @@ def split_database(input_db):
 
     print(f"Total entries: {len(rows)}")
     print(
-        f"Train entries: {train_count}, Validation entries: {val_count}, Test entries: {test_count}"
+        f"Train entries: {train_count}, Validation entries: {val_count}, Test entries: {test_count}, Overfit count: {overfit_count}"
     )
 
 
