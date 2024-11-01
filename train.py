@@ -1,5 +1,6 @@
 import time
 import yaml
+import argparse
 
 import numpy as np
 import mlx.nn as nn
@@ -13,9 +14,11 @@ from datasetGen.factories import buildinWinsIterableFactory
 from datasetGen.constants import BIN_SIZE
 
 
-def test(model, dset, batch_size, eval_fn, num_batches=-1):
+def test(model, val_dset_path, batch_size, eval_fn, num_batches=-1):
     accs = []
-    dset = dset.batch(batch_size)
+    dset = dx.stream_python_iterable(buildinWinsIterableFactory(val_dset_path)).batch(
+        batch_size
+    )
     for i, batch in enumerate(dset):
         if i > num_batches and num_batches != -1:
             break
@@ -42,8 +45,8 @@ def log_loss_and_acc(
 
 def train(
     model,
-    train_dset,
-    val_dset,
+    train_dset_path,
+    val_dset_path,
     optimizer,
     loss_fn,
     eval_fn,
@@ -58,10 +61,15 @@ def train(
     best_acc = 0
 
     for epoch in range(nepochs):
+        train_dset = (
+            dx.stream_python_iterable(
+                buildinWinsIterableFactory(train_dset_path)
+            )
+            .batch(batch_size)
+            .shuffle(8192)
+        )
         losses = []
         accs = []
-
-        train_dset = train_dset.batch(batch_size).shuffle(4096)
 
         start = time.perf_counter()
         for i, batch in enumerate(train_dset):
@@ -72,7 +80,7 @@ def train(
             accs.append(acc)
 
             if i % log_interval == 0:
-                test_acc = test(model, val_dset, batch_size, eval_fn, num_batches=50)
+                test_acc = test(model, val_dset_path, batch_size, eval_fn, num_batches=1)
                 if test_acc > best_acc:
                     model.save_weights("model.npz")
                 stop = time.perf_counter()
@@ -103,23 +111,14 @@ def eval_fn(model, X, y):
 
 
 if __name__ == "__main__":
-    mx.random.seed(101)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config", default="train.yaml")
+    parser.add_argument("--seed", type=int, default=99)
+    args = parser.parse_args()
 
-    with open("train.yaml", "r") as f:
+    mx.random.seed(args.seed)
+    with open(args.config, "r") as f:
         config = yaml.safe_load(f)
-
-    train_overfit_dset = dx.stream_python_iterable(
-        buildinWinsIterableFactory("datasetGen/builtinWinsTrainOverfit.db")
-    )
-    train_dset = dx.stream_python_iterable(
-        buildinWinsIterableFactory("datasetGen/builtinWinsTrain.db")
-    )
-    test_dset = dx.stream_python_iterable(
-        buildinWinsIterableFactory("datasetGen/builtinWinsTest.db")
-    )
-    valid_dset = dx.stream_python_iterable(
-        buildinWinsIterableFactory("datasetGen/builtinWinsVal.db")
-    )
 
     # Training hyperparams
     opt = config["optimizer"]
@@ -149,13 +148,14 @@ if __name__ == "__main__":
     filename = f"{opt}_{lr}_{batch_size}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{BIN_SIZE}.csv"
 
     train(
-        net,
-        train_dset,
-        valid_dset,
-        optimizer,
-        loss_fn,
-        eval_fn,
-        nepochs,
-        batch_size,
-        filename,
+        model=net,
+        train_dset_path="datasetGen/builtinWinsOverfit.db",
+        val_dset_path="datasetGen/builtinWinsVal.db",
+        optimizer=optimizer,
+        loss_fn=loss_fn,
+        eval_fn=eval_fn,
+        nepochs=nepochs,
+        batch_size=batch_size,
+        log_path=filename,
+        log_interval=1,
     )
