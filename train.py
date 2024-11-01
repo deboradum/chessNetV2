@@ -109,7 +109,7 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
 
     train_overfit_dset = dx.stream_python_iterable(
-        buildinWinsIterableFactory("datasetGen/builtinWinsTrainOVERFIT.db")
+        buildinWinsIterableFactory("datasetGen/builtinWinsTrainOverfit.db")
     )
     train_dset = dx.stream_python_iterable(
         buildinWinsIterableFactory("datasetGen/builtinWinsTrain.db")
@@ -121,17 +121,32 @@ if __name__ == "__main__":
         buildinWinsIterableFactory("datasetGen/builtinWinsVal.db")
     )
 
-    if config["optimizer"] == "adam":
-        optimizer = optim.Adam(config["learning_rate"])
+    # Training hyperparams
+    opt = config["optimizer"]
+    lr = config["learning_rate"]
+    nepochs = config["nepochs"]
+    batch_size = config["batch_size"]
+    if opt == "adam":
+        optimizer = optim.Adam(lr)
     else:
-        print(f"{config['optimizer']} optimizer not supported")
+        print(f"{opt} optimizer not supported")
 
-    net = ChessNet(
-        config["num_layers"], config["num_heads"], BIN_SIZE, config["emebedding_dim"]
+    # Model hyperparams
+    num_layers = config["num_layers"]
+    num_heads = config["num_heads"]
+    embedding_dim = config["emebedding_dim"]
+    net = ChessNet(num_layers, num_heads, BIN_SIZE, embedding_dim)
+
+    print(
+        f"Training with {opt} optimizer, learning rate: {lr}, batch size: {batch_size} for {nepochs} epochs.\nModel has {num_layers} layers, {num_heads} heads, {embedding_dim} dimensional embeddings and {BIN_SIZE} output classes."
     )
 
+    # Resume from existing model
     if config["resume"] != "":
+        print(f"Resuming from weights: {config['resume']}")
         net.load_weights(config["resume"])
+
+    filename = f"{opt}_{lr}_{batch_size}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{BIN_SIZE}.csv"
 
     train(
         net,
@@ -140,7 +155,7 @@ if __name__ == "__main__":
         optimizer,
         loss_fn,
         eval_fn,
-        config["nepochs"],
-        config["batch_size"],
-        "adam_5e-5_512bs.csv",
+        nepochs,
+        batch_size,
+        filename,
     )
