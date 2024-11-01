@@ -69,7 +69,8 @@ def main(filepaths):
                fen TEXT PRIMARY KEY,
                padded_fen TEXT,
                win_perc REAL,
-               active_bin INT,
+               active_bin_128 INT,
+               active_bin_64 INT,
                ascii_codes TEXT
            )"""
     )
@@ -100,14 +101,15 @@ def main(filepaths):
                 fen = board.fen()
                 padded_fen = pad_fen(fen)
                 win_perc = get_win_perc(eval_value * 100)
-                active_bin = min(int(win_perc / (1/BIN_SIZE)), 127)
+                active_bin_128 = min(int(win_perc / (1/128)), 127)
+                active_bin_64 = min(int(win_perc / (1/64)), 127)
                 ascii_codes = json.dumps([ord(c) for c in padded_fen])
 
-                positions.append((fen, padded_fen, win_perc, active_bin, ascii_codes))
+                positions.append((fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes))
 
             cursor = conn.cursor()
             cursor.executemany(
-                "INSERT OR IGNORE INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes) VALUES (?, ?, ?, ?, ?, ?)",
                 positions,
             )
             conn.commit()

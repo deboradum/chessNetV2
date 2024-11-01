@@ -23,10 +23,10 @@ def split_database(input_db):
     train_conn = create_database("builtinWinsTrain.db")
     val_conn = create_database("builtinWinsVal.db")
     test_conn = create_database("builtinWinsTest.db")
+    overfit_conn = create_database("builtinWinsOverfit.db")
 
-    train_count, val_count, test_count = 0, 0, 0
-    total_count = 0
-    batch_size = 1024  # Adjust batch size as necessary
+    train_count, val_count, test_count, overfit_count = 0, 0, 0, 0
+    batch_size = 1024
 
     cursor.execute("SELECT * FROM positions")
     while True:
@@ -56,22 +56,32 @@ def split_database(input_db):
                     "INSERT INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
                     row,
                 )
+            if rand_choice < 0.005 and overfit_count<2048:
+                # .5% chance for overfit db, used for testing
+                overfit_count += 1
+                overfit_conn.execute(
+                    "INSERT INTO positions (fen, padded_fen, win_perc, active_bin, ascii_codes) VALUES (?, ?, ?, ?, ?)",
+                    row,
+                )
 
             # Commit in batches
             if (idx + 1) % batch_size == 0:
                 train_conn.commit()
                 val_conn.commit()
                 test_conn.commit()
+                overfit_conn.commit()
 
     # Final commit for any remaining rows
     train_conn.commit()
     val_conn.commit()
     test_conn.commit()
+    overfit_conn.commit()
 
     # Close all connections
     train_conn.close()
     val_conn.close()
     test_conn.close()
+    overfit_conn.close()
     conn.close()
 
     print(f"Total entries: {len(rows)}")

@@ -10,14 +10,19 @@ def buildinWinsIterableFactory(db_path):
     def generator():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT ascii_codes, active_bin FROM positions")
+        cursor.execute("SELECT ascii_codes, active_bin_128, active_bin_64 FROM positions")
 
         while True:
             rows = cursor.fetchmany(BATCH_SIZE)
             if not rows:
                 break
             for row in rows:
-                yield dict(x=json.loads(row[0]), y=row[1])
+                if BIN_SIZE == 128:
+                    yield dict(x=json.loads(row[0]), y=row[1])
+                elif BIN_SIZE == 64:
+                    yield dict(x=json.loads(row[0]), y=row[2])
+                else:
+                    raise Exception("Unimplemented bin size")
 
         cursor.close()
         conn.close()
