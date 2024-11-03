@@ -22,6 +22,13 @@ def plot_metrics(filenames):
         "magenta",
     ]
 
+    max_loss = 0
+    for filename in filenames:
+        df = pd.read_csv(filename)
+        max_loss = max(max_loss, df["train_loss"].max())
+
+    max_loss += 0.1 * max_loss
+
     for i, filename in enumerate(filenames):
         pattern = r"(.+)_(\d\.\d+e?[-+]?\d*)_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)\.csv"
         match = re.match(pattern, filename)
@@ -40,6 +47,7 @@ def plot_metrics(filenames):
         axs[0].set_title("Train Loss")
         axs[0].set_xlabel("Batch")
         axs[0].set_ylabel("Loss")
+        axs[0].set_ylim(0, max_loss)
 
         # train accuracy
         axs[1].plot(
@@ -48,6 +56,7 @@ def plot_metrics(filenames):
         axs[1].set_title("Train Accuracy")
         axs[1].set_xlabel("Batch")
         axs[1].set_ylabel("Accuracy")
+        axs[1].set_ylim(0, 1)
 
         # test accuracy
         axs[2].plot(
@@ -56,6 +65,7 @@ def plot_metrics(filenames):
         axs[2].set_title("Test Accuracy")
         axs[2].set_xlabel("Batch")
         axs[2].set_ylabel("Accuracy")
+        axs[2].set_ylim(0, 1)
 
         # epoch markers
         epochs = df["epoch"].unique()
@@ -72,14 +82,7 @@ def plot_metrics(filenames):
 
 
 csv_files = [
-    "adam_1e-05_512_4_4_1024_64.csv",
-    #"adam_2e-05_512_4_4_1024_64.csv",
-    "adam_3e-05_512_4_4_1024_64.csv",
-    "adam_4e-05_512_4_4_1024_64.csv",
-    "adam_5e-05_512_4_4_1024_64.csv",
-    "adam_6e-05_512_4_4_1024_64.csv",
-    "adam_7e-05_512_4_4_1024_64.csv",
-    # "adam_1e-05_512_4_4_1024_1.csv",
+    "mlx_adam_4e-05_512_4_4_1024_128.csv",
 ]
 
 plot_metrics(csv_files)
