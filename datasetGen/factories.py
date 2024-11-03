@@ -2,9 +2,9 @@ import json
 import sqlite3
 import mlx.core as mx
 
+from constants import PREFETCH_BATCH_SIZE
 from datasetGen.constants import BIN_SIZE
 
-BATCH_SIZE = 4096
 
 def buildinWinsIterableFactory(db_path):
     def generator():
@@ -15,7 +15,7 @@ def buildinWinsIterableFactory(db_path):
         )
 
         while True:
-            rows = cursor.fetchmany(BATCH_SIZE)
+            rows = cursor.fetchmany(PREFETCH_BATCH_SIZE)
             if not rows:
                 break
             for row in rows:
