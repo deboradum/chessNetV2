@@ -2,8 +2,7 @@ import json
 import sqlite3
 import mlx.core as mx
 
-from constants import PREFETCH_BATCH_SIZE
-from datasetGen.constants import BIN_SIZE
+from datasetGen.constants import BIN_SIZE, PREFETCH_BATCH_SIZE
 
 
 def buildinWinsIterableFactory(db_path):

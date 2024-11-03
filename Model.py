@@ -1,7 +1,7 @@
 import mlx.core as mx
 import mlx.nn as nn
 
-from datasetGen.constants import INPUT_DIM, BIN_SIZE
+from datasetGen.constants import BIN_SIZE
 
 
 class FeedForward(nn.Module):

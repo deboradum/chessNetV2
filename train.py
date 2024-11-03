@@ -40,7 +40,7 @@ def log_loss_and_acc(
         f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | test acc: {avg_test_acc:.2f} | Took {time_taken:.2f} seconds"
     )
     with open(filepath, "a+") as f:
-        f.write(f"{epoch},{batch},{avg_train_loss},{avg_train_acc}\n")
+        f.write(f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_test_acc}\n")
 
 
 def train(
