@@ -52,13 +52,13 @@ def train(
     eval_fn,
     nepochs,
     batch_size,
+    save_every,
+    save_model_path_base,
     log_path,
     log_interval=10,
 ):
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
     init_log_file(log_path)
-
-    best_acc = 0
 
     for epoch in range(nepochs):
         train_dset = (
@@ -81,8 +81,6 @@ def train(
 
             if i % log_interval == 0:
                 test_acc = test(model, val_dset_path, batch_size, eval_fn, num_batches=1)
-                if test_acc > best_acc:
-                    model.save_weights("model.npz")
                 stop = time.perf_counter()
                 time_taken = round(stop - start, 2)
                 log_loss_and_acc(
@@ -101,13 +99,27 @@ def train(
             optimizer.update(model, grads)
             mx.eval(model.parameters(), optimizer.state)
 
+            if i % save_every == 0:
+                model.save_weights(f"{save_model_path_base}_epoch_{epoch}_batch_{i}.npz")
 
-def loss_fn(model, X, y):
+
+def classification_loss_fn(model, X, y):
     return mx.mean(nn.losses.cross_entropy(model(X), y))
 
+def regression_loss_fn(model, X, y):
+    return mx.mean(nn.losses.mse_loss(model(X), y))
 
-def eval_fn(model, X, y):
+def classification_eval_fn(model, X, y):
     return mx.mean(mx.argmax(model(X), axis=1) == y)
+
+def mae_regression_eval_fn(model, X, y):
+    return mx.mean(mx.abs(model(X)-y))
+
+def r2_regression_eval_fn(model, X, y):
+    predictions = model(X)
+    ss_total = mx.sum((y - mx.mean(y)) ** 2)
+    ss_residual = mx.sum((y - predictions) ** 2)
+    return 1 - (ss_residual / ss_total)
 
 
 if __name__ == "__main__":
@@ -145,17 +157,20 @@ if __name__ == "__main__":
         print(f"Resuming from weights: {config['resume']}")
         net.load_weights(config["resume"])
 
-    filename = f"{opt}_{lr}_{batch_size}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{BIN_SIZE}.csv"
+    filename = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{BIN_SIZE}.csv"
+    save_model_path_base = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{BIN_SIZE}"
 
     train(
         model=net,
-        train_dset_path="datasetGen/builtinWinsOverfit.db",
+        train_dset_path="datasetGen/builtinWinsTrain.db",
         val_dset_path="datasetGen/builtinWinsVal.db",
         optimizer=optimizer,
-        loss_fn=loss_fn,
-        eval_fn=eval_fn,
+        loss_fn=classification_loss_fn if BIN_SIZE > 1 else regression_loss_fn,
+        eval_fn=classification_eval_fn if BIN_SIZE > 1 else r2_regression_eval_fn,
         nepochs=nepochs,
         batch_size=batch_size,
+        save_every=config["save_every"],
+        save_model_path_base=save_model_path_base,
         log_path=filename,
-        log_interval=1,
+        log_interval=10,
     )
