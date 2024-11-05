@@ -3,14 +3,18 @@ learning_rate:
 optimizer:
   "adam"
 nepochs:
-  5
+  3
 batch_size:
-  512
+  256
 resume:
-  "" # model.npz
+  "mlx_adam_4e-05_512_4_4_1024_128_epoch_0_batch_4800.npz" # .npz for mlx, .pth for torch
+save_every:
+  500
 num_layers:
-  8
+  4
 num_heads:
-  8
+  4
 emebedding_dim:
-  512
+  1024
+seed:
+  99

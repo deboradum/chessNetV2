@@ -39,6 +39,7 @@ def log_loss_and_acc(
     print(
         f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | test acc: {avg_test_acc:.2f} | Took {time_taken:.2f} seconds"
     )
+    # TODO: if resuming, resume batch and stuff from that
     with open(filepath, "a+") as f:
         f.write(f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_test_acc}\n")
 
@@ -58,7 +59,8 @@ def train(
     log_interval=10,
 ):
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
-    init_log_file(log_path)
+    if config["resume"] != "":
+        init_log_file(log_path)
 
     for epoch in range(nepochs):
         train_dset = (
@@ -124,13 +126,13 @@ def r2_regression_eval_fn(model, X, y):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("config", default="train.yaml")
-    parser.add_argument("--seed", type=int, default=99)
+    parser.add_argument("config")
     args = parser.parse_args()
 
-    mx.random.seed(args.seed)
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+
+    mx.random.seed(config["seed"])
 
     # Training hyperparams
     opt = config["optimizer"]
