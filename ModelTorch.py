@@ -61,7 +61,7 @@ class ChessNet(nn.Module):
 
     def forward(self, x):
         # TODO: shift enzo
-        b, seq_len = x.shape
+        b, b, seq_len = x.shape
 
         h = self.token_embeddings(x)
         positions = torch.arange(seq_len).reshape(1, seq_len)  # Create a 1D array of shape (1, seq_len)
