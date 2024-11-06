@@ -2,7 +2,7 @@ import json
 import torch
 import sqlite3
 
-from constants import BIN_SIZE
+from datasetGen.constants import BIN_SIZE
 from torch.utils.data import IterableDataset
 
 

@@ -75,6 +75,8 @@ def train(
 
         start = time.perf_counter()
         for i, batch in enumerate(train_dset):
+            if epoch == 0 and i < 9600:
+                continue
             X, y = mx.array(batch["x"]), mx.array(batch["y"])
             loss, grads = loss_and_grad_fn(model, X, y)
             acc = eval_fn(model, X, y)
