@@ -71,7 +71,7 @@ def get_stockfish_eval(fen, stockfish):
     evaluation = stockfish.get_evaluation()
 
     if evaluation["type"] == "cp":
-        return evaluation["value"]
+        return evaluation["value"]/100
     elif evaluation["type"] == "mate":
         mate_score = 10000 * (1 if evaluation["value"] > 0 else -1)
         return mate_score
@@ -80,7 +80,7 @@ def get_stockfish_eval(fen, stockfish):
 
 
 def norm_ascii(ascii_list):
-    return [(x - MIN_ASCII) / (MAX_ASCII - MIN_ASCII) for x in ascii_list]
+    return [round((x - MIN_ASCII) / (MAX_ASCII - MIN_ASCII), 5) for x in ascii_list]
 
 
 def main(filepaths):
@@ -95,10 +95,8 @@ def main(filepaths):
                active_bin_64 INT,
                ascii_codes TEXT,
                norm_ascii_codes TEXT,
-               stockfish_eval_50 REAL,
-               stockfish_win_perc_50 REAL,
-               stockfish_eval_100 REAL,
-               stockfish_win_perc_100 REAL
+               stockfish_eval_15 REAL,
+               stockfish_win_perc_15 REAL
            )"""
     )
 
@@ -136,14 +134,11 @@ def main(filepaths):
                 ascii_list = [ord(c) for c in padded_fen]
                 ascii_codes = json.dumps(ascii_list)
                 norm_ascii_codes = json.dumps(norm_ascii(ascii_list))
-                stockfish_eval_50 = get_stockfish_eval(fen, stockfish)
-                stockfish_eval_100 = get_stockfish_eval(fen, stockfish)
+                stockfish_eval_15 = get_stockfish_eval(fen, stockfish)
 
                 if not board.turn:
-                    stockfish_eval_50 = -stockfish_eval_50
-                    stockfish_eval_100 = -stockfish_eval_100
-                stockfish_win_perc_50 = get_win_perc(stockfish_eval_50 * 100)
-                stockfish_win_perc_100 = get_win_perc(stockfish_eval_100 * 100)
+                    stockfish_eval_15 = -stockfish_eval_15
+                stockfish_win_perc_15 = get_win_perc(stockfish_eval_15 * 100)
 
                 positions.append(
                     (
@@ -155,16 +150,14 @@ def main(filepaths):
                         active_bin_64,
                         ascii_codes,
                         norm_ascii_codes,
-                        stockfish_eval_50,
-                        stockfish_win_perc_50,
-                        stockfish_eval_100,
-                        stockfish_win_perc_100,
+                        stockfish_eval_15,
+                        stockfish_win_perc_15,
                     )
                 )
 
             cursor = conn.cursor()
             cursor.executemany(
-                "INSERT OR IGNORE INTO positions (fen, padded_fen, eval_value, win_perc, active_bin_128, active_bin_64, ascii_codes, norm_ascii_codes, stockfish_eval_50, stockfish_win_perc_50, stockfish_eval_100, stockfish_win_perc_100) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO positions (fen, padded_fen, eval_value, win_perc, active_bin_128, active_bin_64, ascii_codes, norm_ascii_codes, stockfish_eval_15, stockfish_win_perc_15) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 positions,
             )
             conn.commit()
