@@ -5,6 +5,8 @@ import sqlite3
 import chess.pgn
 from constants import BIN_SIZE
 
+MAX_ASCII = 119
+MIN_ASCII = 45
 
 def get_win_perc(centipawns):
     return 0.5 * 2 / (1 + math.exp(-0.00368208 * centipawns))
@@ -62,6 +64,15 @@ def get_all_pgn_files(root_dir, max_depth=10):
     return files
 
 
+def get_stockfish_eval(board):
+
+    return
+
+
+def norm_ascii(ascii_list):
+    return [(x - MIN_ASCII) / (MAX_ASCII - MIN_ASCII) for x in ascii_list]
+
+
 def main(filepaths):
     conn = sqlite3.connect("builtinWins.db")
     conn.execute(
@@ -72,9 +83,13 @@ def main(filepaths):
                active_bin_128 INT,
                active_bin_64 INT,
                ascii_codes TEXT
+               norm_ascii_codes TEXT
            )"""
     )
 
+
+    highest = 0
+    lowest = 9999999
     for filepath in filepaths:
         pgn = open(filepath)
         g = chess.pgn.read_game(pgn)
@@ -103,13 +118,26 @@ def main(filepaths):
                 win_perc = get_win_perc(eval_value * 100)
                 active_bin_128 = min(int(win_perc / (1/128)), 127)
                 active_bin_64 = min(int(win_perc / (1/64)), 127)
-                ascii_codes = json.dumps([ord(c) for c in padded_fen])
+                ascii_list = [ord(c) for c in padded_fen]
+                ascii_codes = json.dumps(ascii_list)
+                norm_ascii_codes = json.dumps(norm_ascii(ascii_list))
+                stockfish_eval = get_stockfish_eval(board)
 
-                positions.append((fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes))
+                positions.append(
+                    (
+                        fen,
+                        padded_fen,
+                        win_perc,
+                        active_bin_128,
+                        active_bin_64,
+                        ascii_codes,
+                        norm_ascii_codes,
+                    )
+                )
 
             cursor = conn.cursor()
             cursor.executemany(
-                "INSERT OR IGNORE INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes, norm_ascii_codes) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 positions,
             )
             conn.commit()
