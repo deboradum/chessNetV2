@@ -14,8 +14,9 @@ from datasetGen.factories import buildinWinsIterableFactory
 from datasetGen.constants import BIN_SIZE
 
 
-def test(model, val_dset_path, batch_size, eval_fn, num_batches=-1):
+def test(model, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1):
     accs = []
+    lax_accs = []
     dset = dx.stream_python_iterable(buildinWinsIterableFactory(val_dset_path)).batch(
         batch_size
     )
@@ -24,24 +25,33 @@ def test(model, val_dset_path, batch_size, eval_fn, num_batches=-1):
             break
         X, y = mx.array(batch["x"]), mx.array(batch["y"])
         accs.append(eval_fn(model, X, y))
+        lax_accs.append(lax_eval_fn(model, X, y))
 
-    return np.array(accs).mean()
+    return np.array(accs).mean(), np.array(lax_accs).mean()
 
 
 def init_log_file(filepath):
     with open(filepath, "w") as f:
-        f.write("epoch,batch,train_loss,train_acc,test_acc\n")
+        f.write("epoch,batch,train_loss,train_acc,train_lax_acc,test_acc,test_lax_acc\n")
 
 
 def log_loss_and_acc(
-    filepath, epoch, batch, avg_train_loss, avg_train_acc, avg_test_acc, time_taken
+    filepath,
+    epoch,
+    batch,
+    avg_train_loss,
+    avg_train_acc,
+    avg_lax_train_acc,
+    avg_test_acc,
+    avg_lax_test_acc,
+    time_taken,
 ):
     print(
-        f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | test acc: {avg_test_acc:.2f} | Took {time_taken:.2f} seconds"
+        f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | lax train acc: {avg_lax_train_acc:.2f} | test acc: {avg_test_acc:.2f} | lax test acc: {avg_lax_test_acc:.2f} | Took {time_taken:.2f} seconds"
     )
     # TODO: if resuming, resume batch and stuff from that
     with open(filepath, "a+") as f:
-        f.write(f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_test_acc}\n")
+        f.write(f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_test_acc},{avg_lax_test_acc}\n")
 
 
 def train(
@@ -51,6 +61,7 @@ def train(
     optimizer,
     loss_fn,
     eval_fn,
+    lax_eval_fn,
     nepochs,
     batch_size,
     save_every,
@@ -72,17 +83,27 @@ def train(
         )
         losses = []
         accs = []
+        lax_accs = []
 
         start = time.perf_counter()
         for i, batch in enumerate(train_dset):
             X, y = mx.array(batch["x"]), mx.array(batch["y"])
             loss, grads = loss_and_grad_fn(model, X, y)
             acc = eval_fn(model, X, y)
+            lax_acc = lax_eval_fn(model, X, y)
             losses.append(loss)
             accs.append(acc)
+            lax_accs.append(lax_acc)
 
             if i % log_interval == 0:
-                test_acc = test(model, val_dset_path, batch_size, eval_fn, num_batches=1)
+                test_acc, lax_test_acc = test(
+                    model,
+                    val_dset_path,
+                    batch_size,
+                    eval_fn,
+                    lax_eval_fn,
+                    num_batches=1,
+                )
                 stop = time.perf_counter()
                 time_taken = round(stop - start, 2)
                 log_loss_and_acc(
@@ -91,11 +112,14 @@ def train(
                     i,
                     round(np.array(losses).mean(), 2),
                     round(np.array(accs).mean(), 2),
+                    round(np.array(lax_accs).mean(), 2),
                     round(test_acc, 2),
+                    round(lax_test_acc, 2),
                     time_taken,
                 )
                 losses = []
                 accs = []
+                lax_accs = []
                 start = time.perf_counter()
 
             optimizer.update(model, grads)
@@ -113,6 +137,9 @@ def regression_loss_fn(model, X, y):
 
 def classification_eval_fn(model, X, y):
     return mx.mean(mx.argmax(model(X), axis=1) == y)
+
+def classification_k3_eval_fn(model, X, y):
+    return mx.mean(mx.abs(mx.argmax(model(X), axis=1) - y) <= 3)
 
 def mae_regression_eval_fn(model, X, y):
     return mx.mean(mx.abs(model(X)-y))
@@ -164,11 +191,12 @@ if __name__ == "__main__":
 
     train(
         model=net,
-        train_dset_path="datasetGen/builtinWinsTrain.db",
+        train_dset_path="datasetGen/builtinWinsOverfit.db",
         val_dset_path="datasetGen/builtinWinsVal.db",
         optimizer=optimizer,
         loss_fn=classification_loss_fn if BIN_SIZE > 1 else regression_loss_fn,
         eval_fn=classification_eval_fn if BIN_SIZE > 1 else r2_regression_eval_fn,
+        lax_eval_fn=classification_k3_eval_fn if BIN_SIZE > 1 else None,
         nepochs=nepochs,
         batch_size=batch_size,
         save_every=config["save_every"],
