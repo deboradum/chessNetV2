@@ -3,10 +3,12 @@ import math
 import json
 import sqlite3
 import chess.pgn
-from constants import BIN_SIZE
+
+from stockfish import Stockfish
 
 MAX_ASCII = 119
 MIN_ASCII = 45
+
 
 def get_win_perc(centipawns):
     return 0.5 * 2 / (1 + math.exp(-0.00368208 * centipawns))
@@ -64,9 +66,17 @@ def get_all_pgn_files(root_dir, max_depth=10):
     return files
 
 
-def get_stockfish_eval(board):
+def get_stockfish_eval(fen, stockfish):
+    stockfish.set_fen_position(fen)
+    evaluation = stockfish.get_evaluation()
 
-    return
+    if evaluation["type"] == "cp":
+        return evaluation["value"]
+    elif evaluation["type"] == "mate":
+        mate_score = 10000 * (1 if evaluation["value"] > 0 else -1)
+        return mate_score
+    else:
+        raise ValueError("Unexpected evaluation type returned by Stockfish")
 
 
 def norm_ascii(ascii_list):
@@ -74,22 +84,27 @@ def norm_ascii(ascii_list):
 
 
 def main(filepaths):
-    conn = sqlite3.connect("builtinWins.db")
+    conn = sqlite3.connect("dataset.db")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS positions (
                fen TEXT PRIMARY KEY,
                padded_fen TEXT,
+               eval_value REAL,
                win_perc REAL,
                active_bin_128 INT,
                active_bin_64 INT,
-               ascii_codes TEXT
-               norm_ascii_codes TEXT
+               ascii_codes TEXT,
+               norm_ascii_codes TEXT,
+               stockfish_eval_50 REAL,
+               stockfish_win_perc_50 REAL,
+               stockfish_eval_100 REAL,
+               stockfish_win_perc_100 REAL
            )"""
     )
 
+    stockfish = Stockfish("/opt/homebrew/bin/stockfish", depth=15)
+    stockfish.set_skill_level(20)
 
-    highest = 0
-    lowest = 9999999
     for filepath in filepaths:
         pgn = open(filepath)
         g = chess.pgn.read_game(pgn)
@@ -116,28 +131,40 @@ def main(filepaths):
                 fen = board.fen()
                 padded_fen = pad_fen(fen)
                 win_perc = get_win_perc(eval_value * 100)
-                active_bin_128 = min(int(win_perc / (1/128)), 127)
-                active_bin_64 = min(int(win_perc / (1/64)), 127)
+                active_bin_128 = min(int(win_perc / (1 / 128)), 127)
+                active_bin_64 = min(int(win_perc / (1 / 64)), 127)
                 ascii_list = [ord(c) for c in padded_fen]
                 ascii_codes = json.dumps(ascii_list)
                 norm_ascii_codes = json.dumps(norm_ascii(ascii_list))
-                stockfish_eval = get_stockfish_eval(board)
+                stockfish_eval_50 = get_stockfish_eval(fen, stockfish)
+                stockfish_eval_100 = get_stockfish_eval(fen, stockfish)
+
+                if not board.turn:
+                    stockfish_eval_50 = -stockfish_eval_50
+                    stockfish_eval_100 = -stockfish_eval_100
+                stockfish_win_perc_50 = get_win_perc(stockfish_eval_50 * 100)
+                stockfish_win_perc_100 = get_win_perc(stockfish_eval_100 * 100)
 
                 positions.append(
                     (
                         fen,
                         padded_fen,
+                        eval_value,
                         win_perc,
                         active_bin_128,
                         active_bin_64,
                         ascii_codes,
                         norm_ascii_codes,
+                        stockfish_eval_50,
+                        stockfish_win_perc_50,
+                        stockfish_eval_100,
+                        stockfish_win_perc_100,
                     )
                 )
 
             cursor = conn.cursor()
             cursor.executemany(
-                "INSERT OR IGNORE INTO positions (fen, padded_fen, win_perc, active_bin_128, active_bin_64, ascii_codes, norm_ascii_codes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO positions (fen, padded_fen, eval_value, win_perc, active_bin_128, active_bin_64, ascii_codes, norm_ascii_codes, stockfish_eval_50, stockfish_win_perc_50, stockfish_eval_100, stockfish_win_perc_100) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 positions,
             )
             conn.commit()
