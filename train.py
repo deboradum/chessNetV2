@@ -70,7 +70,7 @@ def train(
     log_interval=10,
 ):
     loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
-    if config["resume"] != "":
+    if config["resume"] == "":
         init_log_file(log_path)
 
     for epoch in range(nepochs):
@@ -125,7 +125,7 @@ def train(
             optimizer.update(model, grads)
             mx.eval(model.parameters(), optimizer.state)
 
-            if i % save_every == 0:
+            if i % save_every == 0 and save_every != -1:
                 model.save_weights(f"{save_model_path_base}_epoch_{epoch}_batch_{i}.npz")
 
 
@@ -202,5 +202,5 @@ if __name__ == "__main__":
         save_every=config["save_every"],
         save_model_path_base=save_model_path_base,
         log_path=filename,
-        log_interval=10,
+        log_interval=5,
     )
