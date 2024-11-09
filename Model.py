@@ -56,8 +56,6 @@ class ChessNet(nn.Module):
         for _ in range(num_layers):
             self.layers.append(TransformerBlock(embed_dim, 8))
 
-        self.postLayerNorm = nn.LayerNorm(embed_dim)
-
         self.final_layer = nn.Linear(embed_dim, BIN_SIZE)
 
     def __call__(self, x):
@@ -71,8 +69,6 @@ class ChessNet(nn.Module):
 
         for layer in self.layers:
             h = layer(h)
-
-        h = self.postLayerNorm(h)
 
         logits = self.final_layer(h)
 
