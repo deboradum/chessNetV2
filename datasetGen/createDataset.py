@@ -75,6 +75,7 @@ def norm_ascii(ascii_list):
     return [round((x - MIN_ASCII) / (MAX_ASCII - MIN_ASCII), 5) for x in ascii_list]
 
 
+
 def process_file(filepath):
     conn = sqlite3.connect("dataset.db")
     conn.execute(
@@ -119,7 +120,7 @@ def process_file(filepath):
             padded_fen = pad_fen(fen)
             win_perc = get_win_perc(eval_value * 100)
             active_bin_128 = min(int(win_perc / (1 / 128)), 127)
-            active_bin_64 = min(int(win_perc / (1 / 64)), 127)
+            active_bin_64 = min(int(win_perc / (1 / 64)), 63)
             ascii_list = [ord(c) for c in padded_fen]
             ascii_codes = json.dumps(ascii_list)
             norm_ascii_codes = json.dumps(norm_ascii(ascii_list))
@@ -154,7 +155,7 @@ def process_file(filepath):
 
 
 def main(filepaths):
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(process_file, filepaths)
 
 
