@@ -71,11 +71,6 @@ def get_stockfish_eval(fen, stockfish):
         raise ValueError("Unexpected evaluation type returned by Stockfish")
 
 
-def norm_ascii(ascii_list):
-    return [round((x - MIN_ASCII) / (MAX_ASCII - MIN_ASCII), 5) for x in ascii_list]
-
-
-
 def process_file(filepath):
     conn = sqlite3.connect("dataset.db")
     conn.execute(
@@ -87,7 +82,6 @@ def process_file(filepath):
                active_bin_128 INT,
                active_bin_64 INT,
                ascii_codes TEXT,
-               norm_ascii_codes TEXT,
                stockfish_eval_20 REAL,
                stockfish_win_perc_20 REAL
            )"""
@@ -123,7 +117,6 @@ def process_file(filepath):
             active_bin_64 = min(int(win_perc / (1 / 64)), 63)
             ascii_list = [ord(c) for c in padded_fen]
             ascii_codes = json.dumps(ascii_list)
-            norm_ascii_codes = json.dumps(norm_ascii(ascii_list))
             stockfish_eval_20 = get_stockfish_eval(fen, stockfish)
 
             if not board.turn:
@@ -139,7 +132,6 @@ def process_file(filepath):
                     active_bin_128,
                     active_bin_64,
                     ascii_codes,
-                    norm_ascii_codes,
                     stockfish_eval_20,
                     stockfish_win_perc_20,
                 )
@@ -147,7 +139,7 @@ def process_file(filepath):
 
         cursor = conn.cursor()
         cursor.executemany(
-            "INSERT OR IGNORE INTO positions (fen, padded_fen, eval_value, win_perc, active_bin_128, active_bin_64, ascii_codes, norm_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO positions (fen, padded_fen, eval_value, win_perc, active_bin_128, active_bin_64, ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             positions,
         )
         conn.commit()
