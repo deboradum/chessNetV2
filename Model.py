@@ -51,11 +51,12 @@ class ChessNet(nn.Module):
         super().__init__()
         self.token_embeddings = nn.Embedding(vocab_size, embed_dim)
         self.positional_embeddings = nn.Embedding(max_seq_len, embed_dim)
-        self.postLayerNorm = False
 
         self.layers = []
         for _ in range(num_layers):
             self.layers.append(TransformerBlock(embed_dim, 8))
+
+        self.postLayerNorm = nn.LayerNorm(embed_dim)
 
         self.final_layer = nn.Linear(embed_dim, BIN_SIZE)
 
@@ -71,8 +72,7 @@ class ChessNet(nn.Module):
         for layer in self.layers:
             h = layer(h)
 
-        if self.postLayerNorm:
-            h = self.postLayerNorm(h)
+        h = self.postLayerNorm(h)
 
         logits = self.final_layer(h)
 
