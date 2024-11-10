@@ -1,5 +1,6 @@
 import time
 import yaml
+import math
 import argparse
 
 import numpy as np
@@ -14,6 +15,11 @@ from datasetGen.factories import buildinWinsIterableFactory
 from datasetGen.constants import BIN_SIZE
 
 
+# https://stackoverflow.com/a/62402574
+def mean(l):  # noqa: E741
+    return math.fsum(l) / len(l)
+
+
 def test(model, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1):
     accs = []
     lax_accs = []
@@ -25,14 +31,16 @@ def test(model, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1)
             break
         X, y = mx.array(batch["x"]), mx.array(batch["y"])
         accs.append(eval_fn(model, X, y))
-        lax_accs.append(lax_eval_fn(model, X, y))
+        lax_accs.append(lax_eval_fn(model, X, y)) if lax_eval_fn is not None else 0
 
-    return np.array(accs).mean(), np.array(lax_accs).mean()
+    return mean(accs), mean(lax_accs)
 
 
 def init_log_file(filepath):
     with open(filepath, "w") as f:
-        f.write("epoch,batch,train_loss,train_acc,train_lax_acc,test_acc,test_lax_acc\n")
+        f.write(
+            "epoch,batch,train_loss,train_acc,train_lax_acc,test_acc,test_lax_acc\n"
+        )
 
 
 def log_loss_and_acc(
@@ -51,7 +59,9 @@ def log_loss_and_acc(
     )
     # TODO: if resuming, resume batch and stuff from that
     with open(filepath, "a+") as f:
-        f.write(f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_test_acc},{avg_lax_test_acc}\n")
+        f.write(
+            f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_test_acc},{avg_lax_test_acc}\n"
+        )
 
 
 def train(
@@ -75,9 +85,7 @@ def train(
 
     for epoch in range(nepochs):
         train_dset = (
-            dx.stream_python_iterable(
-                buildinWinsIterableFactory(train_dset_path)
-            )
+            dx.stream_python_iterable(buildinWinsIterableFactory(train_dset_path))
             .batch(batch_size)
             .shuffle(8192)
         )
@@ -89,10 +97,11 @@ def train(
         for i, batch in enumerate(train_dset):
             X, y = mx.array(batch["x"]), mx.array(batch["y"])
             loss, grads = loss_and_grad_fn(model, X, y)
-            acc = eval_fn(model, X, y)
-            lax_acc = lax_eval_fn(model, X, y)
             losses.append(loss)
+
+            acc = eval_fn(model, X, y)
             accs.append(acc)
+            lax_acc = lax_eval_fn(model, X, y) if lax_eval_fn is not None else 0
             lax_accs.append(lax_acc)
 
             if i % log_interval == 0:
@@ -110,13 +119,14 @@ def train(
                     log_path,
                     epoch,
                     i,
-                    round(np.array(losses).mean(), 2),
-                    round(np.array(accs).mean(), 2),
-                    round(np.array(lax_accs).mean(), 2),
+                    round(mean(losses), 2),
+                    round(mean(accs), 2),
+                    round(mean(lax_accs), 2),
                     round(test_acc, 2),
                     round(lax_test_acc, 2),
                     time_taken,
                 )
+
                 losses = []
                 accs = []
                 lax_accs = []
@@ -126,23 +136,30 @@ def train(
             mx.eval(model.parameters(), optimizer.state)
 
             if i % save_every == 0 and save_every != -1:
-                model.save_weights(f"{save_model_path_base}_epoch_{epoch}_batch_{i}.npz")
+                model.save_weights(
+                    f"{save_model_path_base}_epoch_{epoch}_batch_{i}.npz"
+                )
 
 
 def classification_loss_fn(model, X, y):
     return mx.mean(nn.losses.cross_entropy(model(X), y))
 
+
 def regression_loss_fn(model, X, y):
     return mx.mean(nn.losses.mse_loss(model(X), y))
+
 
 def classification_eval_fn(model, X, y):
     return mx.mean(mx.argmax(model(X), axis=1) == y)
 
+
 def classification_k3_eval_fn(model, X, y):
     return mx.mean(mx.abs(mx.argmax(model(X), axis=1) - y) <= 3)
 
+
 def mae_regression_eval_fn(model, X, y):
-    return mx.mean(mx.abs(model(X)-y))
+    return mx.mean(mx.abs(model(X) - y))
+
 
 def r2_regression_eval_fn(model, X, y):
     predictions = model(X)
