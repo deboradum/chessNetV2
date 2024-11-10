@@ -6,23 +6,10 @@ import chess.pgn
 from stockfish import Stockfish
 from concurrent.futures import ThreadPoolExecutor
 
-MAX_ASCII = 119
-MIN_ASCII = 45
-
 
 def get_win_perc(centipawns):
+    centipawns = max(min(centipawns, 1000), -1000)
     return 0.5 * 2 / (1 + math.exp(-0.00368208 * centipawns))
-
-
-def extract_eval_from_comment(comment):
-    if "[%eval " in comment:
-        try:
-            eval_str = comment.split("[%eval ")[1].split("]")[0]
-            eval_value = float(eval_str)
-            return eval_value
-        except Exception as e:
-            return None
-    return None
 
 
 def pad_fen(fen):
@@ -71,17 +58,13 @@ def get_stockfish_eval(fen, stockfish):
         raise ValueError("Unexpected evaluation type returned by Stockfish")
 
 
-def process_file(filepath):
-    conn = sqlite3.connect("dataset.db")
+def process_file(filepath, s, e):
+    conn = sqlite3.connect(f"dataset{s}{e}.db")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS positions (
                fen TEXT PRIMARY KEY,
                padded_fen TEXT,
-               eval_value REAL,
-               win_perc REAL,
-               active_bin_128 INT,
-               active_bin_64 INT,
-               ascii_codes TEXT,
+               padded_ascii_codes TEXT,
                stockfish_eval_20 REAL,
                stockfish_win_perc_20 REAL
            )"""
@@ -101,22 +84,12 @@ def process_file(filepath):
         board = g.board()
         for node in g.mainline():
             move = node.move
-            eval_value = extract_eval_from_comment(node.comment)
             board.push(move)
-
-            if eval_value is None:
-                continue
-
-            if not board.turn:
-                eval_value = -eval_value
 
             fen = board.fen()
             padded_fen = pad_fen(fen)
-            win_perc = get_win_perc(eval_value * 100)
-            active_bin_128 = min(int(win_perc / (1 / 128)), 127)
-            active_bin_64 = min(int(win_perc / (1 / 64)), 63)
             ascii_list = [ord(c) for c in padded_fen]
-            ascii_codes = json.dumps(ascii_list)
+            padded_ascii_codes = json.dumps(ascii_list)
             stockfish_eval_20 = get_stockfish_eval(fen, stockfish)
 
             if not board.turn:
@@ -127,29 +100,37 @@ def process_file(filepath):
                 (
                     fen,
                     padded_fen,
-                    eval_value,
-                    win_perc,
-                    active_bin_128,
-                    active_bin_64,
-                    ascii_codes,
+                    padded_ascii_codes,
                     stockfish_eval_20,
                     stockfish_win_perc_20,
                 )
             )
 
+        print("Adding game with", len(positions), "positions")
         cursor = conn.cursor()
         cursor.executemany(
-            "INSERT OR IGNORE INTO positions (fen, padded_fen, eval_value, win_perc, active_bin_128, active_bin_64, ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
             positions,
         )
         conn.commit()
     conn.close()
 
 
-def main(filepaths):
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        executor.map(process_file, filepaths)
+def main(filepaths, s, e):
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        executor.map(lambda filepath: process_file(filepath, s, e), filepaths)
 
 
-paths = get_all_pgn_files("../data")
-main(paths)
+# Get and write paths to file
+# paths = get_all_pgn_files("../data")
+# with open("all_paths.txt", "w") as f:
+#     for path in paths:
+#         f.write(path + "\n")
+
+# Read paths from file
+with open("all_paths.txt", "r") as f:
+    paths = [line.strip() for line in f]
+
+s = 1
+e = 100
+main(paths[s:e], s, e)
