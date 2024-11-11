@@ -1,4 +1,5 @@
 import os
+import time
 import math
 import json
 import sqlite3
@@ -75,6 +76,7 @@ def process_file(filepath, s, e):
 
     pgn = open(filepath)
     g = chess.pgn.read_game(pgn)
+    start = time.perf_counter()
     while True:
         positions = []
         g = chess.pgn.read_game(pgn)
@@ -106,13 +108,15 @@ def process_file(filepath, s, e):
                 )
             )
 
-        print("Adding game with", len(positions), "positions")
+        # print("Adding game with", len(positions), "positions")
         cursor = conn.cursor()
         cursor.executemany(
             "INSERT OR IGNORE INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
             positions,
         )
         conn.commit()
+    taken = round(time.perf_counter()-start, 2)
+    print(f"Parsed file, took {taken}s")
     conn.close()
 
 
@@ -131,6 +135,6 @@ def main(filepaths, s, e):
 with open("all_paths.txt", "r") as f:
     paths = [line.strip() for line in f]
 
-s = 1
-e = 100
+s = 200
+e = 300
 main(paths[s:e], s, e)
