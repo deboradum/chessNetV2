@@ -185,6 +185,10 @@ if __name__ == "__main__":
     batch_size = config["batch_size"]
     if opt == "adam":
         optimizer = optim.Adam(lr)
+    if opt == "adamw":
+        optimizer = optim.AdamW(lr)
+    elif opt == "adagrad":
+        optimizer = optim.Adagrad(lr)
     else:
         print(f"{opt} optimizer not supported")
 
