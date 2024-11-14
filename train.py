@@ -10,6 +10,7 @@ import mlx.data as dx
 import mlx.optimizers as optim
 
 from Model import ChessNet
+from ADOPT import ADOPT
 
 from datasetGen.factories import buildinWinsIterableFactory
 from datasetGen.constants import BIN_SIZE
@@ -185,10 +186,12 @@ if __name__ == "__main__":
     batch_size = config["batch_size"]
     if opt == "adam":
         optimizer = optim.Adam(lr)
-    if opt == "adamw":
+    elif opt == "adamw":
         optimizer = optim.AdamW(lr)
     elif opt == "adagrad":
         optimizer = optim.Adagrad(lr)
+    elif opt == "adopt":
+        optimizer = ADOPT(lr)
     else:
         print(f"{opt} optimizer not supported")
 
