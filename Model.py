@@ -36,7 +36,12 @@ class TransformerBlock(nn.Module):
 
     def __call__(self, x):
         attention_input = self.layerNorm1(x)
-        att = self.attention(attention_input, attention_input, attention_input)
+        att = self.attention(
+            attention_input,
+            attention_input,
+            attention_input,
+            mask=self.attention.create_additive_causal_mask(x.shape[1]),
+        )
         x += att
 
         mlp_input = self.layerNorm2(x)
