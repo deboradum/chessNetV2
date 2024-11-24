@@ -64,7 +64,12 @@ class ChessNet(nn.Module):
         self.final_layer = nn.Linear(embed_dim, BIN_SIZE)
 
     def __call__(self, x):
-        # TODO: shift enzo
+        b, seq_len = x.shape
+
+        # Padding with BOS token
+        bos_array = mx.zeros((b, 1), dtype=mx.int64)
+        x = mx.concatenate([bos_array, x], axis=1)
+
         b, seq_len = x.shape
 
         h = self.token_embeddings(x)
