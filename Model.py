@@ -52,7 +52,7 @@ class TransformerBlock(nn.Module):
 
 
 class ChessNet(nn.Module):
-    def __init__(self, num_layers, num_heads, vocab_size, embed_dim, max_seq_len=86):
+    def __init__(self, num_layers, num_heads, vocab_size, embed_dim, max_seq_len=87):
         super().__init__()
         self.token_embeddings = nn.Embedding(vocab_size, embed_dim)
         self.positional_embeddings = nn.Embedding(max_seq_len, embed_dim)
