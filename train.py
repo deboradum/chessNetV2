@@ -3,14 +3,12 @@ import yaml
 import math
 import argparse
 
-import numpy as np
 import mlx.nn as nn
 import mlx.core as mx
 import mlx.data as dx
 import mlx.optimizers as optim
 
 from Model import ChessNet
-from ADOPT import ADOPT
 
 from datasetGen.factories import buildinWinsIterableFactory
 from datasetGen.constants import BIN_SIZE, VOCAB_SIZE
@@ -40,7 +38,7 @@ def test(model, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1)
 def init_log_file(filepath):
     with open(filepath, "w") as f:
         f.write(
-            "epoch,batch,train_loss,train_acc,train_lax_acc,test_acc,test_lax_acc\n"
+            "epoch,batch,train_loss,train_acc,train_lax_acc,eval_acc,eval_lax_acc\n"
         )
 
 
@@ -51,17 +49,17 @@ def log_loss_and_acc(
     avg_train_loss,
     avg_train_acc,
     avg_lax_train_acc,
-    avg_test_acc,
-    avg_lax_test_acc,
+    avg_eval_acc,
+    avg_lax_eval_acc,
     time_taken,
 ):
     print(
-        f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | lax train acc: {avg_lax_train_acc:.2f} | test acc: {avg_test_acc:.2f} | lax test acc: {avg_lax_test_acc:.2f} | Took {time_taken:.2f} seconds"
+        f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | lax train acc: {avg_lax_train_acc:.2f} | eval acc: {avg_eval_acc:.2f} | lax eval acc: {avg_lax_eval_acc:.2f} | Took {time_taken:.2f} seconds"
     )
     # TODO: if resuming, resume batch and stuff from that
     with open(filepath, "a+") as f:
         f.write(
-            f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_test_acc},{avg_lax_test_acc}\n"
+            f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_eval_acc},{avg_lax_eval_acc}\n"
         )
 
 
@@ -106,7 +104,7 @@ def train(
             lax_accs.append(lax_acc)
 
             if i % log_interval == 0:
-                test_acc, lax_test_acc = test(
+                eval_acc, lax_eval_acc = test(
                     model,
                     val_dset_path,
                     batch_size,
@@ -123,8 +121,8 @@ def train(
                     round(mean(losses), 2),
                     round(mean(accs), 2),
                     round(mean(lax_accs), 2),
-                    round(test_acc, 2),
-                    round(lax_test_acc, 2),
+                    round(eval_acc, 2),
+                    round(lax_eval_acc, 2),
                     time_taken,
                 )
 
@@ -190,8 +188,6 @@ if __name__ == "__main__":
         optimizer = optim.AdamW(lr)
     elif opt == "adagrad":
         optimizer = optim.Adagrad(lr)
-    elif opt == "adopt":
-        optimizer = ADOPT(lr)
     else:
         print(f"{opt} optimizer not supported")
 
