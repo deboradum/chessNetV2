@@ -13,7 +13,7 @@ from Model import ChessNet
 from ADOPT import ADOPT
 
 from datasetGen.factories import buildinWinsIterableFactory
-from datasetGen.constants import BIN_SIZE
+from datasetGen.constants import BIN_SIZE, VOCAB_SIZE
 
 
 # https://stackoverflow.com/a/62402574
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     num_layers = config["num_layers"]
     num_heads = config["num_heads"]
     embedding_dim = config["emebedding_dim"]
-    net = ChessNet(num_layers, num_heads, BIN_SIZE, embedding_dim)
+    net = ChessNet(num_layers, num_heads, VOCAB_SIZE, embedding_dim)
 
     print(
         f"Training with {opt} optimizer, learning rate: {lr}, batch size: {batch_size} for {nepochs} epochs.\nModel has {num_layers} layers, {num_heads} heads, {embedding_dim} dimensional embeddings and {BIN_SIZE} output classes."
