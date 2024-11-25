@@ -41,18 +41,18 @@ class TransformerBlock(nn.Module):
         self.feedForward = FeedForward(embedding_dim, widening_factor=4)
 
     def __call__(self, x):
-        attention_input = self.layerNorm1(x)
-        att = self.attention(
-            attention_input,
-            attention_input,
-            attention_input,
+        x_ln = self.norm1(x)
+        x_f = self.attention(
+            x_ln,
+            x_ln,
+            x_ln,
             mask=self.attention.create_additive_causal_mask(x.shape[1]),
         )
-        x += att
+        x += x_f
 
-        mlp_input = self.layerNorm2(x)
-        mlp_output = self.feedForward(mlp_input)
-        x += mlp_output
+        x_ln = self.norm2(x)
+        x_f = self.feedForward(x_ln)
+        x += x_f
 
         return x
 
@@ -79,8 +79,8 @@ class ChessNet(nn.Module):
         b, seq_len = x.shape
 
         h = self.token_embeddings(x)
-        positions = mx.arange(seq_len).reshape(1, seq_len)  # Create a 1D array of shape (1, seq_len)
-        positions = mx.tile(positions, (b, 1))  # Repeat the array b times to create shape (b, seq_len)
+        positions = mx.arange(seq_len).reshape(1, seq_len)  # (1, seq_len)
+        positions = mx.tile(positions, (b, 1))  # (b, seq_len)
         h += self.positional_embeddings(positions)
 
         for layer in self.layers:
