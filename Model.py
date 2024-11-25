@@ -24,15 +24,21 @@ class FeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, embedding_dim, num_heads):
+    def __init__(self, embedding_dim, num_heads, rms_norm=False):
         super().__init__()
-        self.layerNorm1 = nn.LayerNorm(embedding_dim)
+        self.norm1 = (
+            nn.RMSNorm(embedding_dim) if rms_norm else nn.LayerNorm(embedding_dim)
+        )
         self.attention = nn.MultiHeadAttention(
             embedding_dim,
             num_heads,
         )
-        self.layerNorm2 = nn.LayerNorm(embedding_dim)
-        self.feedForward = FeedForward(embedding_dim)
+        self.norm2 = (
+            nn.RMSNorm(embedding_dim) if rms_norm else nn.LayerNorm(embedding_dim)
+        )
+
+        # TODO: tweak widening factor
+        self.feedForward = FeedForward(embedding_dim, widening_factor=4)
 
     def __call__(self, x):
         attention_input = self.layerNorm1(x)
@@ -52,7 +58,7 @@ class TransformerBlock(nn.Module):
 
 
 class ChessNet(nn.Module):
-    def __init__(self, num_layers, num_heads, vocab_size, embed_dim, max_seq_len=87):
+    def __init__(self, num_layers, num_heads, vocab_size, embed_dim, max_seq_len=87, rms_norm=False):
         super().__init__()
         self.token_embeddings = nn.Embedding(vocab_size, embed_dim)
         self.positional_embeddings = nn.Embedding(max_seq_len, embed_dim)
