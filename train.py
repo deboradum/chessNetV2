@@ -10,8 +10,7 @@ import mlx.optimizers as optim
 
 from Model import ChessNet
 
-from datasetGen.factories import buildinWinsIterableFactory
-from datasetGen.constants import BIN_SIZE, VOCAB_SIZE
+from datasetGen.factories import iterableFactory
 
 
 # https://stackoverflow.com/a/62402574
@@ -19,10 +18,10 @@ def mean(l):  # noqa: E741
     return math.fsum(l) / len(l)
 
 
-def test(model, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1):
+def test(model, bin_size, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1):
     accs = []
     lax_accs = []
-    dset = dx.stream_python_iterable(buildinWinsIterableFactory(val_dset_path)).batch(
+    dset = dx.stream_python_iterable(iterableFactory(val_dset_path, bin_size)).batch(
         batch_size
     )
     for i, batch in enumerate(dset):
@@ -65,6 +64,7 @@ def log_loss_and_acc(
 
 def train(
     model,
+    bin_size,
     train_dset_path,
     val_dset_path,
     optimizer,
@@ -84,7 +84,7 @@ def train(
 
     for epoch in range(nepochs):
         train_dset = (
-            dx.stream_python_iterable(buildinWinsIterableFactory(train_dset_path))
+            dx.stream_python_iterable(iterableFactory(train_dset_path, bin_size))
             .batch(batch_size)
             .shuffle(8192)
         )
@@ -106,11 +106,12 @@ def train(
             if i % log_interval == 0:
                 eval_acc, lax_eval_acc = test(
                     model,
+                    bin_size,
                     val_dset_path,
                     batch_size,
                     eval_fn,
                     lax_eval_fn,
-                    num_batches=1,
+                    num_batches=5,
                 )
                 stop = time.perf_counter()
                 time_taken = round(stop - start, 2)
@@ -177,6 +178,10 @@ if __name__ == "__main__":
 
     mx.random.seed(config["seed"])
 
+    # Model parameters
+    bin_size = config["bin_size"]
+    vocab_size = config["vocab_size"]
+
     # Training hyperparams
     opt = config["optimizer"]
     lr = config["learning_rate"]
@@ -195,10 +200,10 @@ if __name__ == "__main__":
     num_layers = config["num_layers"]
     num_heads = config["num_heads"]
     embedding_dim = config["emebedding_dim"]
-    net = ChessNet(num_layers, num_heads, VOCAB_SIZE, embedding_dim)
+    net = ChessNet(num_layers, num_heads, vocab_size, embedding_dim, bin_size)
 
     print(
-        f"Training with {opt} optimizer, learning rate: {lr}, batch size: {batch_size} for {nepochs} epochs.\nModel has {num_layers} layers, {num_heads} heads, {embedding_dim} dimensional embeddings and {BIN_SIZE} output classes."
+        f"Training with {opt} optimizer, learning rate: {lr}, batch size: {batch_size} for {nepochs} epochs.\nModel has {num_layers} layers, {num_heads} heads, {embedding_dim} dimensional embeddings, vocab size {vocab_size}  and {bin_size} output classes."
     )
 
     # Resume from existing model
@@ -206,17 +211,18 @@ if __name__ == "__main__":
         print(f"Resuming from weights: {config['resume']}")
         net.load_weights(config["resume"])
 
-    filename = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{BIN_SIZE}.csv"
-    save_model_path_base = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{BIN_SIZE}"
+    filename = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}.csv"
+    save_model_path_base = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}"
 
     train(
         model=net,
-        train_dset_path="datasetGen/builtinWinsOverfit.db",
-        val_dset_path="datasetGen/builtinWinsVal.db",
+        bin_size=bin_size,
+        train_dset_path="datasetGen/train.db",
+        val_dset_path="datasetGen/val.db",
         optimizer=optimizer,
-        loss_fn=classification_loss_fn if BIN_SIZE > 1 else regression_loss_fn,
-        eval_fn=classification_eval_fn if BIN_SIZE > 1 else r2_regression_eval_fn,
-        lax_eval_fn=classification_k3_eval_fn if BIN_SIZE > 1 else None,
+        loss_fn=classification_loss_fn if bin_size > 1 else regression_loss_fn,
+        eval_fn=classification_eval_fn if bin_size > 1 else r2_regression_eval_fn,
+        lax_eval_fn=classification_k3_eval_fn if bin_size > 1 else None,
         nepochs=nepochs,
         batch_size=batch_size,
         save_every=config["save_every"],
