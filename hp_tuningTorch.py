@@ -1,7 +1,6 @@
 import time
-import yaml
 import math
-import argparse
+import optuna
 
 import torch
 import torch.nn as nn
@@ -26,7 +25,9 @@ def mean(l):  # noqa: E741
     return math.fsum(l) / len(l)
 
 
-def test(model, bin_size, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1):
+def test(
+    model, bin_size, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1
+):
     accs = []
     lax_accs = []
     dset = dx.stream_python_iterable(iterableFactory(val_dset_path, bin_size)).batch(
@@ -56,25 +57,26 @@ def log_loss_and_acc(
     avg_train_loss,
     avg_train_acc,
     avg_lax_train_acc,
-    avg_eval_acc,
-    avg_lax_eval_acc,
+    avg_test_acc,
+    avg_lax_test_acc,
     time_taken,
 ):
     print(
-        f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | lax train acc: {avg_lax_train_acc:.2f} | eval acc: {avg_eval_acc:.2f} | lax eval acc: {avg_lax_eval_acc:.2f} | Took {time_taken:.2f} seconds"
+        f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | lax train acc: {avg_lax_train_acc:.2f} | test acc: {avg_test_acc:.2f} | lax test acc: {avg_lax_test_acc:.2f} | Took {time_taken:.2f} seconds"
     )
     # TODO: if resuming, resume batch and stuff from that
     with open(filepath, "a+") as f:
         f.write(
-            f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_eval_acc},{avg_lax_eval_acc}\n"
+            f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_test_acc},{avg_lax_test_acc}\n"
         )
 
 
-def train(
+def evaluate_model(
     model,
     bin_size,
     train_dset_path,
     val_dset_path,
+    test_dset_path,
     optimizer,
     loss_fn,
     eval_fn,
@@ -86,9 +88,9 @@ def train(
     log_path,
     log_interval=10,
 ):
-    if config["resume"] == "":
-        init_log_file(log_path)
+    init_log_file(log_path)
 
+    best_acc = 0
     for epoch in range(nepochs):
         train_dset = (
             dx.stream_python_iterable(iterableFactory(train_dset_path, bin_size))
@@ -126,7 +128,7 @@ def train(
                         batch_size,
                         eval_fn,
                         lax_eval_fn,
-                        num_batches=5,
+                        num_batches=10,
                     )
                 stop = time.perf_counter()
                 time_taken = round(stop - start, 2)
@@ -142,6 +144,10 @@ def train(
                     time_taken,
                 )
 
+                if eval_acc > best_acc:
+                    best_acc = eval_acc
+                    torch.save(model.state_dict(), "best.pt")
+
                 losses = []
                 accs = []
                 lax_accs = []
@@ -150,10 +156,17 @@ def train(
             loss.backward()
             optimizer.step()
 
-            if i % save_every == 0 and save_every != -1:
-                model.save_weights(
-                    f"{save_model_path_base}_epoch_{epoch}_batch_{i}.npz"
-                )
+    # Get test acc for the best model
+    model.load_state_dict(torch.load("best.pt", weights_only=True))
+    final_test_acc, _ = test(
+        model,
+        val_dset_path,
+        batch_size,
+        eval_fn,
+        lax_eval_fn,
+        num_batches=500,
+    )
+    return final_test_acc
 
 
 def classification_loss_fn(model, X, y):
@@ -169,69 +182,66 @@ def classification_k3_eval_fn(model, X, y):
     return torch.mean((torch.abs(torch.argmax(model(X), axis=1) - y) <= 3).float())
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config")
-    args = parser.parse_args()
+# ---------------------------
 
-    with open(args.config, "r") as f:
-        config = yaml.safe_load(f)
 
-    torch.manual_seed(config["seed"])
+def objective(trial):
+    torch.manual_seed(1)
 
-    # Model parameters
-    bin_size = config["bin_size"]
-    vocab_size = config["vocab_size"]
+    bin_size = 128
+    vocab_size = 128
 
-    # Model hyperparams
-    num_layers = config["num_layers"]
-    num_heads = config["num_heads"]
-    embedding_dim = config["emebedding_dim"]
+    embedding_dim = 1024
+    batch_size = 4
+    num_layers = 4
+    num_heads = 4
 
-    # Training hyperparams
-    opt = config["optimizer"]
-    nepochs = config["nepochs"]
-    batch_size = config["batch_size"]
+    rms_norm = trial.suggest_categorical("rms_norm", [True, False])
+    opt = trial.suggest_categorical("optimizer", ["adam", "adamw"])
+    model = ChessNet(
+        num_layers, num_heads, vocab_size, embedding_dim, bin_size, rms_norm=rms_norm
+    ).to(device)
 
-    net = ChessNet(num_layers, num_heads, vocab_size, embedding_dim, bin_size).to(
-        device
-    )
-
-    lr = config["learning_rate"]
+    lr = trial.suggest_float("learning_rate", 2e-5, 8e-5, log=True)
     if opt == "adam":
-        optimizer = optim.Adam(net.parameters(), lr)
+        optimizer = optim.Adam(model.parameters(), lr)
     elif opt == "adamw":
-        optimizer = optim.AdamW(net.parameters(), lr)
+        optimizer = optim.AdamW(model.parameters(), lr)
     elif opt == "adagrad":
-        optimizer = optim.Adagrad(net.parameters(), lr)
-    else:
-        print(f"{opt} optimizer not supported")
+        optimizer = optim.Adagrad(model.parameters(), lr)
 
-    print(
-        f"Training with {opt} optimizer, learning rate: {lr}, batch size: {batch_size} for {nepochs} epochs.\nModel has {num_layers} layers, {num_heads} heads, {embedding_dim} dimensional embeddings, vocab size {vocab_size}  and {bin_size} output classes."
+    filename = f"torch_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{rms_norm}.csv"
+    save_model_path_base = f"torch_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}"
+
+    train_dset_path = "datasetGen/hptune.db"
+    val_dset_path = "datasetGen/val.db"
+    test_dset_path = "datasetGen/test.db"
+
+    acc = evaluate_model(
+        model,
+        bin_size,
+        train_dset_path,
+        val_dset_path,
+        test_dset_path,
+        optimizer,
+        classification_loss_fn,
+        classification_eval_fn,
+        classification_k3_eval_fn,
+        2,
+        batch_size,
+        -1,
+        save_model_path_base,
+        filename,
+        log_interval=10,
     )
 
-    # Resume from existing model
-    if config["resume"] != "":
-        print(f"Resuming from weights: {config['resume']}")
-        net.load_weights(config["resume"])
+    return acc
 
-    filename = f"torch_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}.csv"
-    save_model_path_base = f"torch_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}"
 
-    train(
-        model=net,
-        bin_size=bin_size,
-        train_dset_path="datasetGen/train.db",
-        val_dset_path="datasetGen/val.db",
-        optimizer=optimizer,
-        loss_fn=classification_loss_fn,
-        eval_fn=classification_eval_fn,
-        lax_eval_fn=classification_k3_eval_fn,
-        nepochs=nepochs,
-        batch_size=batch_size,
-        save_every=config["save_every"],
-        save_model_path_base=save_model_path_base,
-        log_path=filename,
-        log_interval=5,
-    )
+if __name__ == "__main__":
+    sampler = optuna.samplers.TPESampler()
+    study = optuna.create_study(direction="maximize", sampler=sampler)
+    study.optimize(objective, n_trials=20)
+
+    print("Best Hyperparameters:", study.best_params)
+    print("Best Accuracy:", study.best_value)
