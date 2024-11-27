@@ -160,6 +160,7 @@ def evaluate_model(
     model.load_state_dict(torch.load("best.pt", weights_only=True))
     final_test_acc, _ = test(
         model,
+        bin_size,
         val_dset_path,
         batch_size,
         eval_fn,

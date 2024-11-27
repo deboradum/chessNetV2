@@ -145,6 +145,7 @@ def evaluate_model(
     model.load_weights("best.npz")
     final_test_acc, _ = test(
         model,
+        bin_size,
         val_dset_path,
         batch_size,
         eval_fn,
@@ -175,7 +176,7 @@ def objective(trial):
     vocab_size = 128
 
     embedding_dim = 1024
-    batch_size = 4
+    batch_size = 256
     num_layers = 4
     num_heads = 4
 
