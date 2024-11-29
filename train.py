@@ -68,6 +68,8 @@ def train(
     train_dset_path,
     val_dset_path,
     optimizer,
+    lr_warmup,
+    learning_rate,
     loss_fn,
     eval_fn,
     lax_eval_fn,
@@ -132,6 +134,8 @@ def train(
                 lax_accs = []
                 start = time.perf_counter()
 
+            # lr scheduler
+            optimizer.learning_rate = min(1, i / lr_warmup) * learning_rate
             optimizer.update(model, grads)
             mx.eval(model.parameters(), optimizer.state)
 
@@ -185,6 +189,7 @@ if __name__ == "__main__":
     # Training hyperparams
     opt = config["optimizer"]
     lr = config["learning_rate"]
+    lr_warmup = config["learning_rate_warmup"]
     nepochs = config["nepochs"]
     batch_size = config["batch_size"]
     if opt == "adam":
@@ -220,6 +225,8 @@ if __name__ == "__main__":
         train_dset_path="datasetGen/train.db",
         val_dset_path="datasetGen/val.db",
         optimizer=optimizer,
+        lr_warmup=lr_warmup,
+        learning_rate=lr,
         loss_fn=classification_loss_fn if bin_size > 1 else regression_loss_fn,
         eval_fn=classification_eval_fn if bin_size > 1 else r2_regression_eval_fn,
         lax_eval_fn=classification_k3_eval_fn if bin_size > 1 else None,
