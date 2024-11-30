@@ -198,9 +198,47 @@ def evalulate_db(db_path):
     conn.close()
 
 
-def merge_dbs(dbs, new):
+def merge_dbs(dbs, new_db):
+    dest_conn = sqlite3.connect(new_db)
+    dest_conn.execute(
+        """CREATE TABLE IF NOT EXISTS positions (
+                fen TEXT PRIMARY KEY,
+                padded_fen TEXT,
+                padded_ascii_codes TEXT,
+                stockfish_eval_20 REAL,
+                stockfish_win_perc_20 REAL
+            )"""
+    )
+    dest_conn.commit()
+    dest_cursor = dest_conn.cursor()
 
-    return
+    batch_size = 65536
+    for  db in dbs:
+        source_conn = sqlite3.connect(db)
+        source_cursor = source_conn.cursor()
+
+        try:
+            source_cursor.execute("SELECT * FROM positions")
+            while True:
+                rows = source_cursor.fetchmany(batch_size)
+                if not rows:
+                    break  # Exit the loop when there are no more rows to fetch
+
+                s = time.perf_counter()
+                for row in rows:
+                    dest_cursor.execute(
+                        "INSERT OR IGNORE INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
+                        row,
+                    )
+                dest_conn.commit()
+                taken = round(time.perf_counter() - s, 2)
+                print(f"Parsed {len(rows)} rows, took {taken} seconds")
+        except sqlite3.DatabaseError as e:
+            print(f"Error processing {db}: {e}")
+            source_conn.close()
+            continue
+        source_conn.close()
+    dest_conn.close()
 
 
 if __name__ == "__main__":
@@ -238,8 +276,8 @@ if __name__ == "__main__":
                 print(f"Error processing {db}: {e}")
 
     # merge databases to eliminate duplicates
-    complete_path = "all.db"
-    merge_dbs(dbs, complete_path)
+    # complete_path = "all.db"
+    # merge_dbs(dbs, complete_path)
 
     # Split database into train, test, val set
     # TODO: Based on game_num: 10000 games in test & val set
