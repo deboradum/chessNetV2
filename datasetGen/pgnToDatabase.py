@@ -2,10 +2,26 @@ import os
 import time
 import math
 import json
+import random
+import tqdm
 import sqlite3
 import chess.pgn
 from stockfish import Stockfish
 from concurrent.futures import ThreadPoolExecutor
+
+
+def create_database(db_name):
+    conn = sqlite3.connect(db_name)
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS positions (
+            fen TEXT PRIMARY KEY,
+            padded_fen TEXT,
+            padded_ascii_codes TEXT,
+            stockfish_eval_20 REAL,
+            stockfish_win_perc_20 REAL
+        )"""
+    )
+    return conn
 
 
 def get_win_perc(centipawns):
@@ -42,6 +58,7 @@ def get_stockfish_eval(fen, stockfish):
     else:
         raise ValueError("Unexpected evaluation type returned by Stockfish")
 
+
 # Parses a Stockfish database PGN file into .db files, with <max_games> per
 # database. Evals are manually set to -1, they will be calculated later on a
 # different machine for speed reasons.
@@ -65,7 +82,7 @@ def create_db_no_evals(filepath, max_games, label, start_offset, end_offset):
             continue
 
         if num_games % 1000 == 0:
-            taken = round(time.perf_counter()-s, 2)
+            taken = round(time.perf_counter() - s, 2)
             print(f"Did 1000 games in {taken}s")
             s = time.perf_counter()
 
@@ -126,7 +143,6 @@ def create_db_no_evals(filepath, max_games, label, start_offset, end_offset):
     conn.close()
 
 
-
 def shuffle_database(db_name, table_name):
     try:
         conn = sqlite3.connect(db_name)
@@ -158,7 +174,9 @@ def shuffle_database(db_name, table_name):
 
 
 def evalulate_db(db_path):
-    stockfish = Stockfish("/opt/homebrew/bin/stockfish", depth=15, parameters={"Threads": 2})
+    stockfish = Stockfish(
+        "/opt/homebrew/bin/stockfish", depth=15, parameters={"Threads": 2}
+    )
     stockfish.set_skill_level(20)
 
     conn = sqlite3.connect(db_path)
@@ -198,7 +216,7 @@ def evalulate_db(db_path):
     conn.close()
 
 
-def merge_dbs(dbs, new_db):
+def merge_dbs(source_dbs, new_db):
     dest_conn = sqlite3.connect(new_db)
     dest_conn.execute(
         """CREATE TABLE IF NOT EXISTS positions (
@@ -206,37 +224,54 @@ def merge_dbs(dbs, new_db):
                 padded_fen TEXT,
                 padded_ascii_codes TEXT,
                 stockfish_eval_20 REAL,
-                stockfish_win_perc_20 REAL
+                stockfish_win_perc_20 REAL,
+                game_num INT
             )"""
     )
     dest_conn.commit()
     dest_cursor = dest_conn.cursor()
 
     batch_size = 65536
-    for  db in dbs:
+    for db in source_dbs:
         source_conn = sqlite3.connect(db)
         source_cursor = source_conn.cursor()
 
-        try:
-            source_cursor.execute("SELECT * FROM positions")
-            while True:
-                rows = source_cursor.fetchmany(batch_size)
-                if not rows:
-                    break  # Exit the loop when there are no more rows to fetch
+        # Get number of rows
+        source_cursor.execute("SELECT COUNT(*) FROM positions")
+        total_rows = source_cursor.fetchone()[0]
 
-                s = time.perf_counter()
-                for row in rows:
-                    dest_cursor.execute(
-                        "INSERT OR IGNORE INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
-                        row,
-                    )
-                dest_conn.commit()
-                taken = round(time.perf_counter() - s, 2)
-                print(f"Parsed {len(rows)} rows, took {taken} seconds")
-        except sqlite3.DatabaseError as e:
-            print(f"Error processing {db}: {e}")
-            source_conn.close()
-            continue
+        with tqdm.tqdm(total=total_rows, desc=f"Processing {db}") as pbar:
+            try:
+                source_cursor.execute("SELECT * FROM positions")
+                while True:
+                    rows = source_cursor.fetchmany(batch_size)
+                    if not rows:
+                        break  # Exit the loop when there are no more rows to fetch
+
+                    # s = time.perf_counter()
+                    for row in rows:
+                        (
+                            _,
+                            _,
+                            _,
+                            stockfish_eval_20,
+                            stockfish_win_perc_20,
+                            _,
+                        ) = row
+                        if abs(stockfish_eval_20) == 10 or stockfish_win_perc_20 < 0:
+                            continue
+                        dest_cursor.execute(
+                            "INSERT OR IGNORE INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20, game_num) VALUES (?, ?, ?, ?, ?, ?)",
+                            row,
+                        )
+                    dest_conn.commit()
+                    # taken = round(time.perf_counter() - s, 2)
+                    pbar.update(len(rows))
+                    # print(f"Parsed {len(rows)} rows, took {taken} seconds")
+            except sqlite3.DatabaseError as e:
+                print(f"Error processing {db}: {e}")
+                source_conn.close()
+                continue
         source_conn.close()
     dest_conn.close()
 
@@ -333,37 +368,37 @@ if __name__ == "__main__":
     # pgn_path = "../data/train_2022-02.pgn"
     # create_db_no_evals(pgn_path, games_per_db, "train", 0, 201)
 
-    # Evaluate db positions
     dbs = [
-        "train_0-100000.db",
-        "train_100000-200000.db",
-        "train_200000-300000.db",
+        # "train_0-100000.db",
+        # "train_100000-200000.db",
+        # "train_200000-300000.db",
         # "train_300000-400000.db",
         # "train_400000-500000.db",
         # "train_500000-600000.db",
         # "train_600000-700000.db",
         # "train_700000-800000.db",
-        # "train_800000-900000.db",
-        # "train_900000-1000000.db",
-        # "train_1000000-1100000.db",
+        "train_800000-900000.db",
+        "train_900000-1000000.db",
+        "train_1000000-1100000.db",
     ]
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        # Submit evaluate_db tasks to the executor
-        futures = {executor.submit(evalulate_db, db): db for db in dbs}
 
-        for future in futures:
-            db = futures[future]
-            try:
-                print("Starting", db)
-                # Wait for the task to complete and check for errors
-                future.result()
-                print(f"Successfully processed {db}")
-            except Exception as e:
-                print(f"Error processing {db}: {e}")
+    # Evaluate db positions
+    # with ThreadPoolExecutor(max_workers=3) as executor:
+    #     # Submit evaluate_db tasks to the executor
+    #     futures = {executor.submit(evalulate_db, db): db for db in dbs}
+    #     for future in futures:
+    #         db = futures[future]
+    #         try:
+    #             print("Starting", db)
+    #             # Wait for the task to complete and check for errors
+    #             future.result()
+    #             print(f"Successfully processed {db}")
+    #         except Exception as e:
+    #             print(f"Error processing {db}: {e}")
 
     # merge databases to eliminate duplicates
-    # complete_path = "all.db"
-    # merge_dbs(dbs, complete_path)
+    complete_path = "all.db"
+    merge_dbs(dbs, complete_path)
 
     # Split database into train, test, val set
     train_games = (0, 1000000)
