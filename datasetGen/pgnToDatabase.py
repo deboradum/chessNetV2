@@ -18,7 +18,8 @@ def create_database(db_name):
             padded_fen TEXT,
             padded_ascii_codes TEXT,
             stockfish_eval_20 REAL,
-            stockfish_win_perc_20 REAL
+            stockfish_win_perc_20 REAL,
+            game_num INT
         )"""
     )
     return conn
@@ -258,7 +259,7 @@ def merge_dbs(source_dbs, new_db):
                             stockfish_win_perc_20,
                             _,
                         ) = row
-                        if abs(stockfish_eval_20) == 10 or stockfish_win_perc_20 < 0:
+                        if (abs(stockfish_eval_20) > 100) or stockfish_win_perc_20 < 0:
                             continue
                         dest_cursor.execute(
                             "INSERT OR IGNORE INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20, game_num) VALUES (?, ?, ?, ?, ?, ?)",
@@ -364,49 +365,49 @@ def split_database(input_db, train_games, eval_games, test_games, hptune_games):
 
 if __name__ == "__main__":
     # Parse PGN into databases
-    # games_per_db = 100
-    # pgn_path = "../data/train_2022-02.pgn"
-    # create_db_no_evals(pgn_path, games_per_db, "train", 0, 201)
+    games_per_db = 100
+    pgn_path = "../data/train_2022-02.pgn"
+    create_db_no_evals(pgn_path, games_per_db, "train", 0, 201)
 
     dbs = [
-        # "train_0-100000.db",
-        # "train_100000-200000.db",
-        # "train_200000-300000.db",
-        # "train_300000-400000.db",
-        # "train_400000-500000.db",
-        # "train_500000-600000.db",
-        # "train_600000-700000.db",
-        # "train_700000-800000.db",
+        "train_0-100000.db",
+        "train_100000-200000.db",
+        "train_200000-300000.db",
+        "train_300000-400000.db",
+        "train_400000-500000.db",
+        "train_500000-600000.db",
+        "train_600000-700000.db",
+        "train_700000-800000.db",
         "train_800000-900000.db",
         "train_900000-1000000.db",
         "train_1000000-1100000.db",
     ]
 
     # Evaluate db positions
-    # with ThreadPoolExecutor(max_workers=3) as executor:
-    #     # Submit evaluate_db tasks to the executor
-    #     futures = {executor.submit(evalulate_db, db): db for db in dbs}
-    #     for future in futures:
-    #         db = futures[future]
-    #         try:
-    #             print("Starting", db)
-    #             # Wait for the task to complete and check for errors
-    #             future.result()
-    #             print(f"Successfully processed {db}")
-    #         except Exception as e:
-    #             print(f"Error processing {db}: {e}")
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        # Submit evaluate_db tasks to the executor
+        futures = {executor.submit(evalulate_db, db): db for db in dbs}
+        for future in futures:
+            db = futures[future]
+            try:
+                print("Starting", db)
+                # Wait for the task to complete and check for errors
+                future.result()
+                print(f"Successfully processed {db}")
+            except Exception as e:
+                print(f"Error processing {db}: {e}")
 
     # merge databases to eliminate duplicates
     complete_path = "all.db"
     merge_dbs(dbs, complete_path)
 
     # Split database into train, test, val set
-    train_games = (0, 1000000)
-    eval_games = (1000001, 1050000)
-    test_games = (1050001, 1100000)
+    train_games = (0, 900899)
+    eval_games = (900900, 950949)
+    test_games = (950950, 1000999)
     hptune_games = (0, 100000)
     split_database("all.db", train_games, eval_games, test_games, hptune_games)
 
     # Shuffle database
-    # db_path = "train.db"
-    # shuffle_database(db_path, "positions")
+    db_path = "train.db"
+    shuffle_database(db_path, "positions")
