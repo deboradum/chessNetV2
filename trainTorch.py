@@ -10,7 +10,7 @@ import torch.optim as optim
 
 from ModelTorch import ChessNet
 
-from datasetGen.factories import iterableFactory
+from factories import iterableFactory
 
 device = torch.device(
     "cuda"
@@ -151,8 +151,9 @@ def train(
             optimizer.step()
 
             if i % save_every == 0 and save_every != -1:
-                model.save_weights(
-                    f"{save_model_path_base}_epoch_{epoch}_batch_{i}.npz"
+                torch.save(
+                    model.state_dict(),
+                    f"{save_model_path_base}_epoch_{epoch}_batch_{i}.pt",
                 )
 
 
@@ -214,7 +215,7 @@ if __name__ == "__main__":
     # Resume from existing model
     if config["resume"] != "":
         print(f"Resuming from weights: {config['resume']}")
-        net.load_weights(config["resume"])
+        net.load_state_dict(torch.load(config["resume"]))
 
     filename = f"torch_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}.csv"
     save_model_path_base = f"torch_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}"
@@ -233,5 +234,5 @@ if __name__ == "__main__":
         save_every=config["save_every"],
         save_model_path_base=save_model_path_base,
         log_path=filename,
-        log_interval=5,
+        log_interval=100,
     )

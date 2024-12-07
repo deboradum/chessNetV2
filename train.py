@@ -10,7 +10,7 @@ import mlx.optimizers as optim
 
 from Model import ChessNet
 
-from datasetGen.factories import iterableFactory
+from factories import iterableFactory
 
 
 # https://stackoverflow.com/a/62402574
