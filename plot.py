@@ -113,10 +113,7 @@ def plot_metrics(filenames):
 
 
 csv_files = [
-    "mlx_adam_4e-05_256_4_4_1024_128_with_mask.csv",
-    "mlx_adam_4e-05_256_2_4_1024_128_learned.csv",
-    "mlx_adam_4e-05_256_4_4_1024_128_bos.csv",
-    "mlx_adam_4e-05_256_4_4_1024_128.csv",
+    "torch_adam_4e-05_128_4_4_1024_128_128.csv"
 ]
 
 plot_metrics(csv_files)
