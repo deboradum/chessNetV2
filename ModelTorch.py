@@ -31,7 +31,7 @@ class FeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, embedding_dim, num_heads, rms_norm=False):
+    def __init__(self, embedding_dim, num_heads, rms_norm=True):
         super().__init__()
         self.norm1 = (
             nn.RMSNorm(embedding_dim) if rms_norm else nn.LayerNorm(embedding_dim)
@@ -66,7 +66,7 @@ class TransformerBlock(nn.Module):
 
 
 class ChessNet(nn.Module):
-    def __init__(self, num_layers, num_heads, vocab_size, embed_dim, num_classes, max_seq_len=87, rms_norm=False):
+    def __init__(self, num_layers, num_heads, vocab_size, embed_dim, num_classes, max_seq_len=87, rms_norm=True):
         super().__init__()
         self.token_embeddings = nn.Embedding(vocab_size, embed_dim)
         self.positional_embeddings = nn.Embedding(max_seq_len, embed_dim)

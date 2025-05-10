@@ -4,8 +4,8 @@ import sqlite3
 PREFETCH_BATCH_SIZE = 8096
 
 
-def iterableFactory(db_path, bin_size):
-    assert bin_size > 1, "Bin size should be at least 1"
+def iterableFactory(db_path, num_classes):
+    assert num_classes > 1, "Bin size should be at least 1"
     def generator():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -18,7 +18,7 @@ def iterableFactory(db_path, bin_size):
             if not rows:
                 break
             for row in rows:
-                yield dict(x=json.loads(row[0]), y=get_bucket(row[1], bin_size))
+                yield dict(x=json.loads(row[0]), y=get_bucket(row[1], num_classes))
 
         cursor.close()
         conn.close()
