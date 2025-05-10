@@ -90,7 +90,7 @@ def train(
     accumulation_update_interval = TARGET_BATCH_SIZE // config.batch_size
     assert (
         accumulation_update_interval >= 1
-    ), "accumulation_update_interval must be one or greater. (is {accumulation_update_interval})"
+    ), f"accumulation_update_interval must be one or greater. (is {accumulation_update_interval})"
     print(
         f"Target batch size is {TARGET_BATCH_SIZE}, training batch size is {config.batch_size}. Updating model parameters every {accumulation_update_interval} steps."
     )
@@ -124,10 +124,10 @@ def train(
                 loss = loss_fn(model, X, y)
                 acc = eval_fn(model, X, y)
                 lax_acc = lax_eval_fn(model, X, y) if lax_eval_fn is not None else 0
+                running_loss += loss.item()
                 loss = loss / accumulation_update_interval
             loss.backward()
 
-            running_loss += loss.item()
             running_acc += acc
             running_lax_acc += lax_acc
 
@@ -169,6 +169,15 @@ def train(
                 running_acc = 0.0
                 running_lax_acc = 0.0
                 start = time.perf_counter()
+
+        # In case any gradients remain
+        if (i + 1) % accumulation_update_interval != 0:
+            if config.gradient_clipping_norm != 0.0:
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), config.gradient_clipping_norm
+                )
+            optimizer.step()
+            optimizer.zero_grad()
 
         model.eval()
         with torch.no_grad():
