@@ -1,5 +1,7 @@
 data
 __pycache__
+wandb
+
 .DS_Store
 
 *.db
