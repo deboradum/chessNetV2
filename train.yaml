@@ -1,26 +1,23 @@
-learning_rate:
-  0.00004
-learning_rate_warmup:
-  200
-optimizer:
-  "adam"
-nepochs:
-  11
-batch_size:
-  256
-resume:
-  "" # .npz for mlx, .pth for torch
-save_every:
-  -1
-num_layers:
-  4
-num_heads:
-  4
-emebedding_dim:
-  1024
-vocab_size:
-  128
-bin_size:
-  128
-seed:
-  99
+learning_rate: 0.00004
+optimizer: "AdamW"
+nepochs: 11
+batch_size: 64
+num_layers: 8
+num_heads: 8
+embedding_dim: 1024
+vocab_size: 128
+num_classes: 128
+seed: 99
+
+log_interval: 16
+warmup_epochs: 1
+warmup_learning_rate: 1.0e-6
+final_learning_rate: 1.2e-5
+weight_decay: 0.05
+gradient_clipping_norm: 1.0
+beta_1: 0.9
+beta_2: 0.95
+save_dir: "checkpoints"
+train_dset_path: "datasetGen/train.db"
+val_dset_path: "datasetGen/val.db"
+test_dset_path: "datasetGen/test.db"
