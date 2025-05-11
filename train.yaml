@@ -18,6 +18,6 @@ gradient_clipping_norm: 1.0
 beta_1: 0.9
 beta_2: 0.95
 save_dir: "checkpoints"
-train_dset_path: "datasetGen/train.db"
+train_dset_path: "datasetGen/balanced_train.db"
 val_dset_path: "datasetGen/val.db"
 test_dset_path: "datasetGen/test.db"
