@@ -37,7 +37,7 @@ class Config:
     beta_1: float = 0.9
     beta_2: float = 0.95
     save_dir: str = "checkpoints"
-    train_dset_path: str = "datasetGen/train.db"
+    train_dset_path: str = "datasetGen/balanced_train.db"
     val_dset_path: str = "datasetGen/val.db"
     test_dset_path: str = "datasetGen/test.db"
 
@@ -50,38 +50,56 @@ device = torch.device(
     else "cpu"
 )
 
+
+def eval_fn(preds, y):
+    acc = torch.mean((torch.argmax(preds, axis=1) == y).float())
+    lax_acc = torch.mean((torch.abs(torch.argmax(preds, axis=1) - y) <= 3).float())
+
+    return acc, lax_acc
+
+
 TARGET_BATCH_SIZE = 1024
 
-def test(model, config: Config, eval_fn, lax_eval_fn, data_path, num_batches=-1):
+
+def test(model, config: Config, data_path, num_batches=-1):
     done = 0
+    running_test_loss = 0.0
     running_test_acc = 0.0
     running_test_lax_acc = 0.0
-    for i, batch in enumerate(
-        dx.stream_python_iterable(iterableFactory(data_path, config.num_classes)).batch(
-            config.batch_size
-        )
-    ):
-        if num_batches != -1 and i > num_batches:
-            break
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            X, y = torch.tensor(batch["x"]).to(device), torch.tensor(batch["y"]).to(device)
-            running_test_acc += eval_fn(model, X, y)
-            running_test_lax_acc += (
-                lax_eval_fn(model, X, y) if lax_eval_fn is not None else 0
-            )
-        done += 1
+    with torch.no_grad():
+        for i, batch in enumerate(
+            dx.stream_python_iterable(
+                iterableFactory(data_path, config.num_classes)
+            ).batch(config.batch_size)
+        ):
+            if num_batches != -1 and i > num_batches:
+                break
+            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+                X, y = (
+                    torch.tensor(batch["x"]).to(device),
+                    torch.tensor(batch["y"]).to(device),
+                )
+                preds = model(X)
+                loss = nn.CrossEntropyLoss()(preds, y)
+                acc, lax_acc = eval_fn(preds, y)
 
-    return running_test_acc / done, running_test_lax_acc / done
+                running_test_loss += loss
+                running_test_acc += acc
+                running_test_lax_acc += lax_acc
+            done += 1
+
+    return (
+        running_test_loss / done,
+        running_test_acc / done,
+        running_test_lax_acc / done,
+    )
 
 
 def train(
     model,
-    config : Config,
+    config: Config,
     optimizer,
     scheduler,
-    loss_fn,
-    eval_fn,
-    lax_eval_fn,
 ):
     warmup_lr = config.warmup_learning_rate
     initial_lr = config.learning_rate
@@ -121,9 +139,9 @@ def train(
             X, y = (torch.tensor(b["x"]).to(device), torch.tensor(b["y"]).to(device))
 
             with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-                loss = loss_fn(model, X, y)
-                acc = eval_fn(model, X, y)
-                lax_acc = lax_eval_fn(model, X, y) if lax_eval_fn is not None else 0
+                preds = model(X)
+                loss = nn.CrossEntropyLoss()(preds, y)
+                acc, lax_acc = eval_fn(preds, y)
                 running_loss += loss.item()
                 loss = loss / accumulation_update_interval
             loss.backward()
@@ -181,26 +199,20 @@ def train(
 
         model.eval()
         with torch.no_grad():
-            eval_acc, lax_eval_acc = test(
-                model, config, eval_fn, lax_eval_fn, config.val_dset_path
+            eval_loss, eval_acc, lax_eval_acc = test(
+                model, config, config.val_dset_path
             )
-        wandb.log({"epoch": epoch, "eval_acc": eval_acc, "lax_eval_acc": lax_eval_acc})
+        wandb.log(
+            {
+                "epoch": epoch,
+                "eval_loss": eval_loss,
+                "eval_acc": eval_acc,
+                "lax_eval_acc": lax_eval_acc,
+            }
+        )
         torch.save(model.state_dict(), f"{config.save_dir}/epoch_{epoch}")
 
-    return test(model, config, eval_fn, lax_eval_fn, config.test_dset_path)
-
-
-def classification_loss_fn(model, X, y):
-    c = nn.CrossEntropyLoss()
-    return torch.mean(c(model(X), y))
-
-
-def classification_eval_fn(model, X, y):
-    return torch.mean((torch.argmax(model(X), axis=1) == y).float())
-
-
-def classification_k3_eval_fn(model, X, y):
-    return torch.mean((torch.abs(torch.argmax(model(X), axis=1) - y) <= 3).float())
+    return test(model, config, config.test_dset_path)
 
 
 def get_optimizer(config: Config, net):
@@ -251,13 +263,12 @@ if __name__ == "__main__":
 
     wandb.init(project="chessNet", config=config)
 
-    test_acc, lax_test_acc = train(
+    test_loss, test_acc, lax_test_acc = train(
         model=net,
         config=config,
         optimizer=optimizer,
         scheduler=scheduler,
-        loss_fn=classification_loss_fn,
-        eval_fn=classification_eval_fn,
-        lax_eval_fn=classification_k3_eval_fn,
     )
-    wandb.log({"test_acc": test_acc, "lax_test_acc": lax_test_acc})
+    wandb.log(
+        {"test_loss": test_loss, "test_acc": test_acc, "lax_test_acc": lax_test_acc}
+    )
