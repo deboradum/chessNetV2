@@ -187,6 +187,31 @@ def train(
                 running_acc = 0.0
                 running_lax_acc = 0.0
                 start = time.perf_counter()
+            # Perform eval and save model every 50 logging intervals
+            if (i // config.log_interval) and (i // config.log_interval) % 50 == 0:
+                print("Evaluating")
+                start = time.perf_counter()
+                model.eval()
+                eval_loss, eval_acc, lax_eval_acc = test(
+                    model, config, config.val_dset_path, num_batches=10000
+                )
+                taken = time.perf_counter() - start
+                wandb.log(
+                    {
+                        "steps": global_step,
+                        "eval_loss": eval_loss,
+                        "eval_acc": eval_acc,
+                        "lax_eval_acc": lax_eval_acc,
+                    }
+                )
+                print(
+                    f"[Eval] Epoch {epoch}, step {i} (global step {global_step}),",
+                    f"Eval Loss: {eval_loss:.4f}, Eval acc: {eval_acc:.2f}, Lax eval acc: {lax_eval_acc:.2f}",
+                    f"Time Taken: {taken:.2f}s",
+                )
+                torch.save(model.state_dict(), f"{config.save_dir}/epoch_{epoch}_batch_{i}")
+                model.train()
+                start = time.perf_counter()
 
         # In case any gradients remain
         if (i + 1) % accumulation_update_interval != 0:
@@ -197,22 +222,7 @@ def train(
             optimizer.step()
             optimizer.zero_grad()
 
-        model.eval()
-        with torch.no_grad():
-            eval_loss, eval_acc, lax_eval_acc = test(
-                model, config, config.val_dset_path
-            )
-        wandb.log(
-            {
-                "epoch": epoch,
-                "eval_loss": eval_loss,
-                "eval_acc": eval_acc,
-                "lax_eval_acc": lax_eval_acc,
-            }
-        )
-        torch.save(model.state_dict(), f"{config.save_dir}/epoch_{epoch}")
-
-    return test(model, config, config.test_dset_path)
+    return test(model, config, config.test_dset_path, num_batches=10000)
 
 
 def get_optimizer(config: Config, net):
