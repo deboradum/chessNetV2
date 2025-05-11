@@ -90,8 +90,7 @@ class ChessNet(nn.Module):
         b, seq_len = x.shape
 
         h = self.token_embeddings(x)
-        positions = torch.arange(seq_len).reshape(1, seq_len).to(device)  # (1, seq_len)
-        positions = torch.tile(positions, (b, 1))  # (b, seq_len)
+        positions = torch.arange(seq_len, device=device).unsqueeze(0).expand(b, -1)  # (b, seq_len)
         h = h + self.positional_embeddings(positions)
 
         for layer in self.layers:

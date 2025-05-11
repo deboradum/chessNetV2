@@ -1,4 +1,3 @@
-learning_rate: 0.00004
 optimizer: "AdamW"
 nepochs: 11
 batch_size: 64
@@ -10,8 +9,9 @@ num_classes: 128
 seed: 99
 
 log_interval: 16
-warmup_epochs: 1
+warmup_epochs: 0
 warmup_learning_rate: 1.0e-6
+learning_rate: 1.0e-3
 final_learning_rate: 1.2e-5
 weight_decay: 0.05
 gradient_clipping_norm: 1.0
