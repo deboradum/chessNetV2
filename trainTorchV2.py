@@ -74,7 +74,7 @@ def test(model, config: Config, data_path, num_batches=-1):
         ):
             if num_batches != -1 and i > num_batches:
                 break
-            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
                 X, y = (
                     torch.tensor(batch["x"]).to(device),
                     torch.tensor(batch["y"]).to(device),
@@ -138,7 +138,7 @@ def train(
         ):
             X, y = (torch.tensor(b["x"]).to(device), torch.tensor(b["y"]).to(device))
 
-            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
                 preds = model(X)
                 loss = nn.CrossEntropyLoss()(preds, y)
                 acc, lax_acc = eval_fn(preds, y)
@@ -187,13 +187,13 @@ def train(
                 running_acc = 0.0
                 running_lax_acc = 0.0
                 start = time.perf_counter()
-            # Perform eval and save model every 50 logging intervals
-            if (i // config.log_interval) and (i // config.log_interval) % 50 == 0:
+            # Perform eval and save model every 1000 logging intervals
+            if i and i % (config.log_interval * 1000) == 0:
                 print("Evaluating")
                 start = time.perf_counter()
                 model.eval()
                 eval_loss, eval_acc, lax_eval_acc = test(
-                    model, config, config.val_dset_path, num_batches=10000
+                    model, config, config.val_dset_path, num_batches=1000
                 )
                 taken = time.perf_counter() - start
                 wandb.log(
