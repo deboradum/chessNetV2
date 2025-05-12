@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from ModelTorch import ChessNet
 from factories import iterableFactory
 
-
 @dataclass
 class Config:
     num_layers: int = 8
@@ -40,6 +39,7 @@ class Config:
     train_dset_path: str = "datasetGen/balanced_train.db"
     val_dset_path: str = "datasetGen/val.db"
     test_dset_path: str = "datasetGen/test.db"
+    resume_checkpoint_path: str = "none"
 
 
 device = torch.device(
@@ -267,10 +267,14 @@ if __name__ == "__main__":
         num_classes=config.num_classes,
         rms_norm=True,
     ).to(device)
+    if os.path.isfile(config.resume_checkpoint_path):
+        print(f"Resuming from pre-trained weights {config.resume_checkpoint_path}")
+        net.load_state_dict(
+            torch.load(config.resume_checkpoint_path, map_location=device)
+        )
     optimizer, scheduler = get_optimizer(config, net)
 
     os.makedirs(config.save_dir, exist_ok=True)
-
     wandb.init(project="chessNet", config=config)
 
     test_loss, test_acc, lax_test_acc = train(
