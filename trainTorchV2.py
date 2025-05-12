@@ -122,7 +122,9 @@ def train(
             for param_group in optimizer.param_groups:
                 param_group["lr"] = lr
         else:
-            scheduler.step()
+            # If no warmup is used, do not call scheduler.step before training the first epoch.
+            if epoch:
+                scheduler.step()
 
         model.train()
         start = time.perf_counter()
@@ -271,7 +273,9 @@ if __name__ == "__main__":
     if os.path.isfile(config.resume_checkpoint_path):
         print(f"Resuming from pre-trained weights {config.resume_checkpoint_path}")
         net.load_state_dict(
-            torch.load(config.resume_checkpoint_path, map_location=device)
+            torch.load(
+                config.resume_checkpoint_path, map_location=device, weights_only=True
+            )
         )
     optimizer, scheduler = get_optimizer(config, net)
 
