@@ -2,6 +2,7 @@ import os
 import time
 import yaml
 import wandb
+import shutil
 import argparse
 
 import torch
@@ -275,6 +276,7 @@ if __name__ == "__main__":
     optimizer, scheduler = get_optimizer(config, net)
 
     os.makedirs(config.save_dir, exist_ok=True)
+    shutil.copy(args.config, config.save_dir)
     wandb.init(project="chessNet", config=config)
 
     test_loss, test_acc, lax_test_acc = train(
