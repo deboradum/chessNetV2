@@ -233,7 +233,7 @@ def get_optimizer(config: Config, net):
     if config.optimizer == "AdamW":
         optimizer = optim.AdamW(
             net.parameters(),
-            lr=config.warmup_learning_rate,
+            lr=config.warmup_learning_rate if config.warmup_epochs else config.learning_rate,
             weight_decay=config.weight_decay,
             betas=(config.beta_1, config.beta_2),
         )
