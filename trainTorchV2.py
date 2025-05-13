@@ -191,7 +191,7 @@ def train(
                 running_lax_acc = 0.0
                 start = time.perf_counter()
             # Perform eval and save model every 1000 logging intervals
-            if i and i % (config.log_interval * 1000) == 0:
+            if i % (config.log_interval * 1000) == 0:
                 print("Evaluating")
                 start = time.perf_counter()
                 model.eval()
