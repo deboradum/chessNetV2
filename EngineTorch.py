@@ -93,6 +93,6 @@ if __name__ == "__main__":
         try:
             best_move = e.get_best_move(f)
             print(best_move)
-        except Exception as e:
-            print("Unexpected error:", e)
+        except Exception as err:
+            print("Unexpected error:", err)
             traceback.print_exc()
