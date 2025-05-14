@@ -63,10 +63,12 @@ class Engine:
 
         with torch.no_grad():
             logits = self.model(boards_after_moves)
-        # Get most likely win chance
+        # Get most likely win chance (from the perspective of the opponent)
         win_chance_per_move = torch.argmax(logits, dim=1)
         if self.verbose:
             print("Found", win_chance_per_move, win_chance_per_move.shape)
+            for m, p in zip(legal_moves, win_chance_per_move):
+                print(f"{m}, {p/config.num_classes}%")
 
         # Best move is the move with the lowest win chance for the opponent.
         best_move = legal_moves[int(torch.argmin(win_chance_per_move))]
