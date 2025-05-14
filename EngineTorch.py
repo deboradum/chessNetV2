@@ -1,8 +1,11 @@
 import time
+import yaml
 import chess
 import torch
+import argparse
 import traceback
 
+from trainTorchV2 import Config
 from ModelTorch import ChessNet
 from datasetGen.pgnToDatabase import pad_fen
 
@@ -79,12 +82,28 @@ class Engine:
 
 
 if __name__ == "__main__":
-    net = ChessNet(4, 4, 128, 1024, 128)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config", type=str, help="Path to config file", required=False
+    )
+    parser.add_argument(
+        "--checkpoint", type=str, help="Path to checkpoint file", required=True
+    )
+    args = parser.parse_args()
+    with open(args.config, "r") as f:
+        config_dict = yaml.safe_load(f)
+        config = Config(**config_dict)
+
+    net = ChessNet(
+        num_layers=config.num_layers,
+        num_heads=config.num_heads,
+        vocab_size=config.vocab_size,
+        embed_dim=config.embedding_dim,
+        num_classes=config.num_classes,
+        rms_norm=True,
+    ).to(device)
     net.load_state_dict(
-        torch.load(
-            "torch_adam_4e-05_128_4_4_1024_128_128_epoch_1_batch_300000.pt",
-            map_location=torch.device("cpu"),
-        )
+        torch.load(args.checkpoint, map_location=device, weights_only=True)
     )
     e = Engine(net, verbose=False)
 
