@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import yaml
 import torch
 import chess
@@ -89,6 +88,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--checkpoint", type=str, help="Path to checkpoint file", required=True
     )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
     with open(args.config, "r") as f:
         config_dict = yaml.safe_load(f)
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         net.load_state_dict(
             torch.load(args.checkpoint, map_location=device, weights_only=True)
         )
-        e = Engine(net, verbose=False)
+        e = Engine(net, verbose=args.verbose)
 
         sf = Player(True, stockfish)
         eng = Player(False, e)

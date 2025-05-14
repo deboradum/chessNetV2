@@ -36,6 +36,7 @@ def board_to_input_(board):
 class Engine:
     def __init__(self, model, verbose=False):
         self.model = model.to(device)
+        self.model.eval()
         self.verbose = verbose
 
     def get_best_move(self, fen):
@@ -60,7 +61,8 @@ class Engine:
             ]
         ).to(device)
 
-        logits = self.model(boards_after_moves)
+        with torch.no_grad():
+            logits = self.model(boards_after_moves)
         # Get most likely win chance
         win_chance_per_move = torch.argmax(logits, dim=1)
         if self.verbose:
@@ -89,6 +91,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--checkpoint", type=str, help="Path to checkpoint file", required=True
     )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
     with open(args.config, "r") as f:
         config_dict = yaml.safe_load(f)
@@ -101,11 +104,11 @@ if __name__ == "__main__":
         embed_dim=config.embedding_dim,
         num_classes=config.num_classes,
         rms_norm=True,
-    ).to(device)
+    )
     net.load_state_dict(
         torch.load(args.checkpoint, map_location=device, weights_only=True)
     )
-    e = Engine(net, verbose=False)
+    e = Engine(net, verbose=args.verbose)
 
     while True:
         f = input("\nType fen string: ")
