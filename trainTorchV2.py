@@ -212,7 +212,7 @@ def train(
                     f"Eval Loss: {eval_loss:.4f}, Eval acc: {eval_acc:.2f}, Lax eval acc: {lax_eval_acc:.2f}",
                     f"Time Taken: {taken:.2f}s",
                 )
-                torch.save(model.state_dict(), f"{config.save_dir}/epoch_{epoch}_batch_{i}")
+                torch.save(model.state_dict(), f"{config.save_dir}/epoch_{epoch}_batch_{i}.pt")
                 model.train()
                 start = time.perf_counter()
 
