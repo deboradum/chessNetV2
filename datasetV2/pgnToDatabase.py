@@ -2,13 +2,16 @@ import os
 import time
 import math
 import json
-import random
 import tqdm
 import sqlite3
 import chess.pgn
 from stockfish import Stockfish
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Pool, cpu_count
+
+STOCKFISH_PATH = "/opt/homebrew/bin/stockfish"
+DB_PATH = "pgn_dbs/lichess_db_standard_rated_2024-11.db"
+CHUNK_SIZE = 500  # Adjust based on your evaluation speed and memory
 
 
 def create_database(db_name):
@@ -169,8 +172,7 @@ def evalulate_db(db_path):
     cursor.execute("SELECT fen FROM positions WHERE stockfish_win_perc_20 = -1.0")
     rows = cursor.fetchall()
     count = 0
-    print("Starting.")
-    s = time.perf_counter()
+    print("Starting", db_path)
     updates = []
     for row in rows:
         fen = row[0]
@@ -183,10 +185,6 @@ def evalulate_db(db_path):
         except Exception as e:
             print(f"Error evaluating FEN {fen}: {e}")
             continue
-        # cursor.execute(
-        #     "UPDATE positions SET stockfish_eval_20 = ?, stockfish_win_perc_20 = ? WHERE fen = ?",
-        #     (new_eval, new_win_perc, fen),
-        # )
         updates.append((new_eval, new_win_perc, fen))
         count += 1
 
@@ -197,9 +195,6 @@ def evalulate_db(db_path):
             )
             updates.clear()
             conn.commit()
-            taken = round(time.perf_counter() - s, 2)
-            print(f"[{db_path}]: Committed {count} updates in {taken} seconds.")
-            s = time.perf_counter()
     conn.commit()
     print(f"[{db_path}] Completed updating {count} rows.")
     conn.close()
@@ -275,32 +270,6 @@ def get_all_ext_files_in_dir(dir_name, ext=".pgn"):
     return all_files
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# -----------
-
-
-STOCKFISH_PATH = "/opt/homebrew/bin/stockfish"
-DB_PATH = "pgn_dbs/lichess_db_standard_rated_2024-11.db"
-CHUNK_SIZE = 500  # Adjust based on your evaluation speed and memory
-
-
 def init_stockfish():
     sf = Stockfish(STOCKFISH_PATH, depth=15, parameters={"Threads": 2})
     sf.set_skill_level(20)
@@ -368,36 +337,28 @@ if __name__ == "__main__":
             continue
         create_db_no_evals(pgn_path, db_name, skip_early_game=True)
 
-
-
-
-    evaluate_db_parallel("pgn_dbs/lichess_db_standard_rated_2024-11.db")
+    # evaluate_db_parallel("pgn_dbs/lichess_db_standard_rated_2024-11.db")
 
     # # Evaluate db positions
-    # dbs = get_all_ext_files_in_dir(subdir_name, ".db")
-    # with ThreadPoolExecutor(max_workers=3) as executor:
-    #     # Submit evaluate_db tasks to the executor
-    #     futures = {executor.submit(evalulate_db, db): db for db in dbs}
-    #     for future in futures:
-    #         db = futures[future]
-    #         try:
-    #             print("Starting", db)
-    #             # Wait for the task to complete and check for errors
-    #             future.result()
-    #             print(f"Successfully processed {db}")
-    #         except Exception as e:
-    #             print(f"Error processing {db}: {e}")
+    dbs = get_all_ext_files_in_dir(subdir_name, ".db")
+    dbs.remove("pgn_dbs/lichess_db_standard_rated_2024-11.db")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        # Submit evaluate_db tasks to the executor
+        futures = {executor.submit(evalulate_db, db): db for db in dbs}
+        for future in futures:
+            db = futures[future]
+            try:
+                # Wait for the task to complete and check for errors
+                future.result()
+                print(f"Successfully processed {db}")
+            except Exception as e:
+                print(f"Error processing {db}: {e}")
 
-    # # merge databases to eliminate duplicates
-    # complete_path = "all.db"
-    # merge_dbs(dbs, complete_path)
+    # Merge database using cli:
+    # sqlite3 dest.db "ATTACH 'source.db' AS db2; INSERT OR IGNORE INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) SELECT fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20 FROM db2.positions WHERE stockfish_eval_20 != -1; DETACH db2;";
 
-    # # Split database into train, test, val set
-    # train_games = (0, 900899)
-    # eval_games = (900900, 950949)
-    # test_games = (950950, 1000999)
-    # hptune_games = (0, 100000)
-    # split_database("all.db", train_games, eval_games, test_games, hptune_games)
+    # Split database into train, test, val set
+    # TODO
 
     # # Shuffle database
     # db_path = "train.db"
