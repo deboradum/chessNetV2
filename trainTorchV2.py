@@ -51,6 +51,12 @@ device = torch.device(
     else "cpu"
 )
 
+# Alternative method of converting the board to the model's input sequence.
+# Instead of padding the fen and using it as a sequence, this method simply
+# flattens the 8x8 board (and adds some info about castling, en-passant, etc).
+def fen_to_board_seq(fen):
+    raise NotImplementedError
+
 
 def eval_fn(preds, y):
     acc = torch.mean((torch.argmax(preds, axis=1) == y).float())
