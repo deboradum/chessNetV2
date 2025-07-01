@@ -1,6 +1,8 @@
 data
 __pycache__
 wandb
+checkpointsWarmedup
+checkpointsLarge
 
 .DS_Store
 
