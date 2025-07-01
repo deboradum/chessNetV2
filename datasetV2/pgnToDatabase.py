@@ -82,6 +82,7 @@ def create_db_no_evals(filepath, db_path, skip_early_game=False):
     num_games = 0
 
     while True:
+        print(f"game {num_games}")
         positions = []
         g = chess.pgn.read_game(pgn)
         if not g:
@@ -89,13 +90,18 @@ def create_db_no_evals(filepath, db_path, skip_early_game=False):
 
         num_games += 1
 
+        if num_games < 500000:
+            continue
+        if num_games > 20000000:
+            break
+
         board = g.board()
         for turn, node in enumerate(g.mainline()):
             move = node.move
             board.push(move)
 
             # Skip first 15 moves to get more mid / endgame positions in the dataset
-            if skip_early_game and turn < 30:
+            if skip_early_game and turn < 40:
                 continue
 
             fen = board.fen()
@@ -380,8 +386,8 @@ def get_all_ext_files_in_dir(dir_name, ext=".pgn"):
 # -----------
 
 
-STOCKFISH_PATH = "/opt/homebrew/bin/stockfish"
-DB_PATH = "pgn_dbs/lichess_db_standard_rated_2024-11.db"
+STOCKFISH_PATH = "/usr/local/bin/stockfish"
+DB_PATH = "pgn_dbs/lichess_db_standard_rated_2025-03.db"
 CHUNK_SIZE = 500  # Adjust based on your evaluation speed and memory
 
 
@@ -416,6 +422,7 @@ def evaluate_chunk(fens):
         )
         conn.commit()
     conn.close()
+    print("Chunk done")
 
 
 def evaluate_db_parallel(db_path):
@@ -423,7 +430,7 @@ def evaluate_db_parallel(db_path):
     cursor = conn.cursor()
 
     cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("SELECT fen FROM positions WHERE stockfish_win_perc_20 = -1.0")
+    cursor.execute("SELECT fen FROM positions WHERE stockfish_win_perc_20 = -1.0 LIMIT 1000000")
     fens = [row[0] for row in cursor.fetchall()]
     conn.close()
 
@@ -431,9 +438,12 @@ def evaluate_db_parallel(db_path):
 
     # Split into chunks
     chunks = [fens[i : i + CHUNK_SIZE] for i in range(0, len(fens), CHUNK_SIZE)]
-
+    
+    print("deleting fens")
+    del fens
+    
     start_time = time.perf_counter()
-    with Pool(processes=4) as pool:
+    with Pool(processes=7) as pool:
         pool.map(evaluate_chunk, chunks)
 
     elapsed = round(time.perf_counter() - start_time, 2)
@@ -445,17 +455,15 @@ if __name__ == "__main__":
     subdir_name = "pgn_dbs"
     os.makedirs(subdir_name, exist_ok=True)
     pgns = get_all_ext_files_in_dir("../data", ".pgn")
-    for pgn_path in pgns:
-        db_name = subdir_name + pgn_path.replace(".pgn", ".db").replace("../data", "")
-        if os.path.isfile(db_name):
-            print(f"{db_name} already done")
-            continue
-        create_db_no_evals(pgn_path, db_name, skip_early_game=True)
+    pgns = ["pgn_dbs/lichess_db_standard_rated_2025-03.pgn"]
+    #for pgn_path in pgns:
+    #    db_name = subdir_name + pgn_path.replace(".pgn", ".db").replace("../data", "")
+    #    if os.path.isfile(db_name):
+    #        print(f"{db_name} already done")
+    #        continue
+    #    create_db_no_evals(pgn_path, db_name, skip_early_game=True)
 
-
-
-
-    evaluate_db_parallel("pgn_dbs/lichess_db_standard_rated_2024-11.db")
+    evaluate_db_parallel("pgn_dbs/lichess_db_standard_rated_2025-03.db")
 
     # # Evaluate db positions
     # dbs = get_all_ext_files_in_dir(subdir_name, ".db")

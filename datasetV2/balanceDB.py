@@ -2,8 +2,8 @@ import sqlite3
 from tqdm import tqdm
 
 bucket_size = 0.05
-input_db = "datasetGen/train.db"
-output_db = "datasetGen/balanced_train.db"
+input_db = "datasetV2/pgn_dbs/all.db"
+output_db = "datasetV2/pgn_dbs/balanced.db"
 num_buckets = int(1 / bucket_size)
 
 input_conn = sqlite3.connect(input_db)
