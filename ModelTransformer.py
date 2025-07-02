@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 
@@ -34,8 +35,11 @@ class TransformerBlock(nn.Module):
             nn.RMSNorm(embedding_dim) if rms_norm else nn.LayerNorm(embedding_dim)
         )
 
-        # TODO: tweak widening factor
         self.feedForward = FeedForward(embedding_dim, widening_factor=4)
+
+        # Section 2.2 from https://arxiv.org/abs/2502.05967
+        self.tau = 0.4
+        self.sqrt_tau = math.sqrt(1-self.tau)
 
     def forward(self, x):
         b, seq_len, _ = x.size()
@@ -47,11 +51,15 @@ class TransformerBlock(nn.Module):
         )
         causal_mask = causal_mask.masked_fill(causal_mask == 1, float("-inf"))
         x_f, _ = self.attention(x_ln, x_ln, x_ln, attn_mask=causal_mask)
-        x = x + x_f
+
+        # Section 2.2 from https://arxiv.org/abs/2502.05967
+        x = self.sqrt_tau * x + self.tau * x_f
 
         x_ln = self.norm2(x)
         x_f = self.feedForward(x_ln)
-        x = x + x_f
+
+        # Section 2.2 from https://arxiv.org/abs/2502.05967
+        x = self.sqrt_tau * x + self.tau * x_f
 
         return x
 
