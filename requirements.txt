@@ -1,0 +1,7 @@
+chess
+mlx-data
+PyYAML
+stockfish
+torch
+wandb
+tqdm
