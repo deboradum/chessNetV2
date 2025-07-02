@@ -1,239 +1,377 @@
+import os
 import time
 import yaml
-import math
+import wandb
+import shutil
 import argparse
 
-import mlx.nn as nn
-import mlx.core as mx
+import torch
+import torch.nn as nn
 import mlx.data as dx
-import mlx.optimizers as optim
+import torch.optim as optim
 
-from Model import ChessNet
-
+from configs import TransformerConfig, CTMConfig
+from ModelCTM import ChessCTM
+from ModelTransformer import ChessNet
 from factories import iterableFactory
 
 
-# https://stackoverflow.com/a/62402574
-def mean(l):  # noqa: E741
-    return math.fsum(l) / len(l)
+device = torch.device(
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+)
+
+# Alternative method of converting the board to the model's input sequence.
+# Instead of padding the fen and using it as a sequence, this method simply
+# flattens the 8x8 board (and adds some info about castling, en-passant, etc).
+def fen_to_board_seq(fen):
+    raise NotImplementedError
 
 
-def test(model, bin_size, val_dset_path, batch_size, eval_fn, lax_eval_fn, num_batches=-1):
-    accs = []
-    lax_accs = []
-    dset = dx.stream_python_iterable(iterableFactory(val_dset_path, bin_size)).batch(
-        batch_size
+def get_transformer_loss(preds, y):
+    return nn.CrossEntropyLoss()(preds, y)
+
+def get_transformer_acc(preds, y):
+    acc = torch.mean((torch.argmax(preds, axis=1) == y).float())
+    lax_acc = torch.mean((torch.abs(torch.argmax(preds, axis=1) - y) <= 3).float())
+
+    return acc, lax_acc
+
+
+def get_ctm_loss(predictions, certainties, targets, use_most_certain=True):
+    """use_most_certain will select either the most certain point or the final point."""
+    losses = nn.CrossEntropyLoss(reduction='none')(
+        predictions.float(),
+        torch.repeat_interleave(targets.unsqueeze(-1), predictions.size(-1), -1)
     )
-    for i, batch in enumerate(dset):
-        if i > num_batches and num_batches != -1:
-            break
-        X, y = mx.array(batch["x"]), mx.array(batch["y"])
-        accs.append(eval_fn(model, X, y))
-        lax_accs.append(lax_eval_fn(model, X, y)) if lax_eval_fn is not None else 0
 
-    return mean(accs), mean(lax_accs)
+    loss_index_1 = losses.argmin(dim=1)
+    loss_index_2 = certainties[:, 1].argmax(-1)
+    if not use_most_certain:
+        loss_index_2[:] = -1
+
+    batch_indexer = torch.arange(predictions.size(0), device=predictions.device)
+    loss_minimum_ce = losses[batch_indexer, loss_index_1].mean()
+    loss_selected = losses[batch_indexer, loss_index_2].mean()
+
+    loss = (loss_minimum_ce + loss_selected) / 2
+
+    return loss, loss_index_2
+
+def get_ctm_acc(predictions, targets, where_most_certain):
+    """Calculate the accuracy based on the prediction at the most certain internal tick."""
+    B = predictions.size(0)
+    device = predictions.device
+
+    predictions_at_most_certain_internal_tick = predictions.argmax(1)[torch.arange(B, device=device), where_most_certain]
+    acc = (predictions_at_most_certain_internal_tick == targets).float().mean().item()
+    lax_acc = (torch.abs(predictions_at_most_certain_internal_tick - targets) <= 1).float().mean().item()
+
+    return acc, lax_acc
 
 
-def init_log_file(filepath):
-    with open(filepath, "w") as f:
-        f.write(
-            "epoch,batch,train_loss,train_acc,train_lax_acc,eval_acc,eval_lax_acc\n"
-        )
+def test(model, model_type, config: TransformerConfig|CTMConfig, data_path, num_batches=-1):
+    done = 0
+    running_test_loss = 0.0
+    running_test_acc = 0.0
+    running_test_lax_acc = 0.0
+    with torch.no_grad():
+        for i, batch in enumerate(
+            dx.stream_python_iterable(
+                iterableFactory(data_path, config.num_classes)
+            ).batch(config.batch_size)
+        ):
+            if num_batches != -1 and i > num_batches:
+                break
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                X, y = (
+                    torch.tensor(batch["x"]).to(device),
+                    torch.tensor(batch["y"]).to(device),
+                )
+                if model_type == "transformer":
+                    preds = model(X)
+                    loss = get_transformer_loss(preds, y)
+                    acc, lax_acc = get_transformer_acc(preds, y)
+                elif model_type == "ctm":
+                    preds, certainties = model(X, track=False)
+                    loss, where_most_certain = get_ctm_loss(preds, certainties, y)
+                    acc, lax_acc = get_ctm_acc(preds, y, where_most_certain)
+                else:
+                    raise NotImplementedError
 
+                running_test_loss += loss
+                running_test_acc += acc
+                running_test_lax_acc += lax_acc
+            done += 1
 
-def log_loss_and_acc(
-    filepath,
-    epoch,
-    batch,
-    avg_train_loss,
-    avg_train_acc,
-    avg_lax_train_acc,
-    avg_eval_acc,
-    avg_lax_eval_acc,
-    time_taken,
-):
-    print(
-        f"Epoch: {epoch}, batch: {batch} | train loss: {avg_train_loss:.2f} | train acc: {avg_train_acc:.2f} | lax train acc: {avg_lax_train_acc:.2f} | eval acc: {avg_eval_acc:.2f} | lax eval acc: {avg_lax_eval_acc:.2f} | Took {time_taken:.2f} seconds"
+    return (
+        running_test_loss / done,
+        running_test_acc / done,
+        running_test_lax_acc / done,
     )
-    # TODO: if resuming, resume batch and stuff from that
-    with open(filepath, "a+") as f:
-        f.write(
-            f"{epoch},{batch},{avg_train_loss},{avg_train_acc},{avg_lax_train_acc},{avg_eval_acc},{avg_lax_eval_acc}\n"
-        )
+
+
+def clamp_decay_params(module, _input):
+        with torch.no_grad():
+            module.decay_params_action.data.clamp_(0, 15)
+            module.decay_params_out.data.clamp_(0, 15)
 
 
 def train(
     model,
-    bin_size,
-    train_dset_path,
-    val_dset_path,
+    model_type,
+    config: TransformerConfig|CTMConfig,
     optimizer,
-    lr_warmup,
-    learning_rate,
-    loss_fn,
-    eval_fn,
-    lax_eval_fn,
-    nepochs,
-    batch_size,
-    save_every,
-    save_model_path_base,
-    log_path,
-    log_interval=10,
+    scheduler,
 ):
-    loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
-    if config["resume"] == "":
-        init_log_file(log_path)
+    warmup_lr = config.warmup_learning_rate
+    initial_lr = config.learning_rate
+    global_step = 0
 
-    for epoch in range(nepochs):
-        train_dset = (
-            dx.stream_python_iterable(iterableFactory(train_dset_path, bin_size))
-            .batch(batch_size)
-            .shuffle(8192)
-        )
-        losses = []
-        accs = []
-        lax_accs = []
+    accumulation_update_interval = config.target_batch_size // config.batch_size
+    assert (
+        accumulation_update_interval >= 1
+    ), f"accumulation_update_interval must be one or greater. (is {accumulation_update_interval})"
+    print(
+        f"Target batch size is {config.target_batch_size}, training batch size is {config.batch_size}. Updating model parameters every {accumulation_update_interval} steps."
+    )
 
+    for epoch in range(config.nepochs):
+        if epoch < config.warmup_epochs:
+            print("Warmup epoch")
+            # Linear warmup
+            lr = warmup_lr + (initial_lr - warmup_lr) * (epoch / config.warmup_epochs)
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = lr
+        else:
+            # If no warmup is used, do not call scheduler.step before training the first epoch.
+            if epoch:
+                scheduler.step()
+
+        model.train()
         start = time.perf_counter()
-        for i, batch in enumerate(train_dset):
-            X, y = mx.array(batch["x"]), mx.array(batch["y"])
-            loss, grads = loss_and_grad_fn(model, X, y)
-            losses.append(loss)
+        running_loss = 0.0
+        running_acc = 0.0
+        running_lax_acc = 0.0
+        current_lr = optimizer.param_groups[0]["lr"]
+        for i, b in enumerate(
+            dx.stream_python_iterable(
+                iterableFactory(config.train_dset_path, config.num_classes)
+            )
+            .batch(config.batch_size)
+            .shuffle(8192)
+        ):
+            X, y = (torch.tensor(b["x"]).to(device), torch.tensor(b["y"]).to(device))
 
-            acc = eval_fn(model, X, y)
-            accs.append(acc)
-            lax_acc = lax_eval_fn(model, X, y) if lax_eval_fn is not None else 0
-            lax_accs.append(lax_acc)
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                if model_type == "transformer":
+                    preds = model(X)
+                    loss = get_transformer_loss(preds, y)
+                    acc, lax_acc = get_transformer_acc(preds, y)
+                elif model_type == "ctm":
+                    preds, certainties = model(X, track=False)
+                    loss, where_most_certain = get_ctm_loss(preds, certainties, y)
+                    acc, lax_acc = get_ctm_acc(preds, y, where_most_certain)
+                running_loss += loss.item()
+                loss = loss / accumulation_update_interval
+            loss.backward()
 
-            if i % log_interval == 0:
-                eval_acc, lax_eval_acc = test(
-                    model,
-                    bin_size,
-                    val_dset_path,
-                    batch_size,
-                    eval_fn,
-                    lax_eval_fn,
-                    num_batches=5,
+            running_acc += acc
+            running_lax_acc += lax_acc
+
+            if (i + 1) % accumulation_update_interval == 0:
+                if config.gradient_clipping_norm != 0.0:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), config.gradient_clipping_norm
+                    )
+                optimizer.step()
+                optimizer.zero_grad()
+
+            global_step += config.batch_size
+
+            if i and i % config.log_interval == 0:
+                taken = time.perf_counter() - start
+                avg_loss = running_loss / config.log_interval
+                avg_acc = running_acc / config.log_interval
+                avg_lax_acc = running_lax_acc / config.log_interval
+                ips = config.log_interval / taken
+
+                wandb.log(
+                    {
+                        "epoch": epoch,
+                        "batch": i,
+                        "steps": global_step,
+                        "train_loss": avg_loss,
+                        "train_acc": avg_acc,
+                        "lax_train_acc": avg_lax_acc,
+                        "learning_rate": current_lr,
+                    }
                 )
-                stop = time.perf_counter()
-                time_taken = round(stop - start, 2)
-                log_loss_and_acc(
-                    log_path,
-                    epoch,
-                    i,
-                    round(mean(losses), 2),
-                    round(mean(accs), 2),
-                    round(mean(lax_accs), 2),
-                    round(eval_acc, 2),
-                    round(lax_eval_acc, 2),
-                    time_taken,
+                print(
+                    f"Epoch {epoch}, step {i} (global step {global_step}),",
+                    f"Avg Loss: {avg_loss:.4f}, Avg acc: {avg_acc:.2f}, Avg lax acc: {avg_lax_acc:.2f},",
+                    f"Time Taken: {taken:.2f}s, ({ips:.2f} i/s)",
                 )
 
-                losses = []
-                accs = []
-                lax_accs = []
+                running_loss = 0.0
+                running_acc = 0.0
+                running_lax_acc = 0.0
+                start = time.perf_counter()
+            # Perform eval and save model every 1000 logging intervals
+            if i % (config.log_interval * 1000) == 0:
+                print("Evaluating")
+                start = time.perf_counter()
+                model.eval()
+                eval_loss, eval_acc, lax_eval_acc = test(
+                    model, model_type, config, config.val_dset_path, num_batches=10
+                )
+                taken = time.perf_counter() - start
+                wandb.log(
+                    {
+                        "steps": global_step,
+                        "eval_loss": eval_loss,
+                        "eval_acc": eval_acc,
+                        "lax_eval_acc": lax_eval_acc,
+                    }
+                )
+                print(
+                    f"[Eval] Epoch {epoch}, step {i} (global step {global_step}),",
+                    f"Eval Loss: {eval_loss:.4f}, Eval acc: {eval_acc:.2f}, Lax eval acc: {lax_eval_acc:.2f}",
+                    f"Time Taken: {taken:.2f}s",
+                )
+                torch.save(model.state_dict(), f"{config.save_dir}/epoch_{epoch}_batch_{i}.pt")
+                model.train()
                 start = time.perf_counter()
 
-            # lr scheduler
-            optimizer.learning_rate = min(1, i / lr_warmup) * learning_rate
-            optimizer.update(model, grads)
-            mx.eval(model.parameters(), optimizer.state)
-
-            if i % save_every == 0 and save_every != -1:
-                model.save_weights(
-                    f"{save_model_path_base}_epoch_{epoch}_batch_{i}.npz"
+        # In case any gradients remain
+        if (i + 1) % accumulation_update_interval != 0:
+            if config.gradient_clipping_norm != 0.0:
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), config.gradient_clipping_norm
                 )
+            optimizer.step()
+            optimizer.zero_grad()
+
+    return test(model, model_type, config, config.test_dset_path, num_batches=10000)
 
 
-def classification_loss_fn(model, X, y):
-    return mx.mean(nn.losses.cross_entropy(model(X), y))
+def get_optimizer(config: TransformerConfig|CTMConfig, net):
+    print("Preparing optimizer")
+    if config.optimizer == "AdamW":
+        optimizer = optim.AdamW(
+            net.parameters(),
+            lr=config.warmup_learning_rate if config.warmup_epochs else config.learning_rate,
+            weight_decay=config.weight_decay,
+            betas=(config.beta_1, config.beta_2),
+        )
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer=optimizer,
+            T_max=config.nepochs - config.warmup_epochs,
+            eta_min=config.final_learning_rate,
+        )
+    else:
+        raise NotImplementedError
+
+    return optimizer, scheduler
 
 
-def regression_loss_fn(model, X, y):
-    return mx.mean(nn.losses.mse_loss(model(X), y))
+def get_model(model_type, config:TransformerConfig|CTMConfig):
+    net:ChessNet|ChessCTM
+    if model_type == "transformer":
+        if not isinstance(config, TransformerConfig):
+            raise TypeError("Expected TransformerConfig for transformer model")
+        net = ChessNet(
+            num_layers=config.num_layers,
+            num_heads=config.num_heads,
+            vocab_size=config.vocab_size,
+            embed_dim=config.embedding_dim,
+            num_classes=config.num_classes,
+            rms_norm=True,
+        ).to(device)
+    elif model_type == "ctm":
+        if not isinstance(config, CTMConfig):
+            raise TypeError("Expected CTMConfig for ctm model")
+        net = ChessCTM(
+            iterations=config.iterations,
+            d_model=config.d_model,
+            d_input=config.d_input,
+            memory_length=config.memory_length,
+            heads=config.heads,
+            n_synch_out=config.n_synch_out,
+            n_synch_action=config.n_synch_action,
+            num_classes=config.num_classes,
+            memory_hidden_dims=config.memory_hidden_dims,
+            vocab_size=config.vocab_size,
+            token_embed_dim=config.token_embed_dim,
+        ).to(device)
+    else:
+        raise NotImplementedError
 
+    if os.path.isfile(config.resume_checkpoint_path):
+        print(f"Resuming from pre-trained weights {config.resume_checkpoint_path}")
+        net.load_state_dict(
+            torch.load(
+                config.resume_checkpoint_path, map_location=device, weights_only=True
+            )
+        )
 
-def classification_eval_fn(model, X, y):
-    return mx.mean(mx.argmax(model(X), axis=1) == y)
-
-
-def classification_k3_eval_fn(model, X, y):
-    return mx.mean(mx.abs(mx.argmax(model(X), axis=1) - y) <= 3)
-
-
-def mae_regression_eval_fn(model, X, y):
-    return mx.mean(mx.abs(model(X) - y))
-
-
-def r2_regression_eval_fn(model, X, y):
-    predictions = model(X)
-    ss_total = mx.sum((y - mx.mean(y)) ** 2)
-    ss_residual = mx.sum((y - predictions) ** 2)
-    return 1 - (ss_residual / ss_total)
+    return net
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("model", choices=["transformer", "ctm"])
     parser.add_argument("config")
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
-        config = yaml.safe_load(f)
+        config:TransformerConfig|CTMConfig
 
-    mx.random.seed(config["seed"])
+        config_dict = yaml.safe_load(f)
+        if args.model == "transformer":
+            config = TransformerConfig(**config_dict)
+            config_dict["model_type"] = "transformer"
+        elif args.model == "ctm":
+            config = CTMConfig(**config_dict)
+            config_dict["model_type"] = "ctm"
+        else:
+            raise NotImplementedError()
+        config_dict["device"] = device
 
-    # Model parameters
-    bin_size = config["bin_size"]
-    vocab_size = config["vocab_size"]
+    torch.manual_seed(config.seed)
 
-    # Training hyperparams
-    opt = config["optimizer"]
-    lr = config["learning_rate"]
-    lr_warmup = config["learning_rate_warmup"]
-    nepochs = config["nepochs"]
-    batch_size = config["batch_size"]
-    if opt == "adam":
-        optimizer = optim.Adam(lr)
-    elif opt == "adamw":
-        optimizer = optim.AdamW(lr)
-    elif opt == "adagrad":
-        optimizer = optim.Adagrad(lr)
-    else:
-        print(f"{opt} optimizer not supported")
+    net = get_model(args.model, config)
 
-    # Model hyperparams
-    num_layers = config["num_layers"]
-    num_heads = config["num_heads"]
-    embedding_dim = config["emebedding_dim"]
-    net = ChessNet(num_layers, num_heads, vocab_size, embedding_dim, bin_size)
+    # Run the model with one dummy batch to initialize lazy layers.
+    dummy_batch = next(iter(dx.stream_python_iterable(iterableFactory(config.train_dset_path, config.num_classes)).batch(config.batch_size)))
+    dummy_input = torch.tensor(dummy_batch["x"]).to(device)
+    with torch.no_grad():
+        _ = net(dummy_input)
 
-    print(
-        f"Training with {opt} optimizer, learning rate: {lr}, batch size: {batch_size} for {nepochs} epochs.\nModel has {num_layers} layers, {num_heads} heads, {embedding_dim} dimensional embeddings, vocab size {vocab_size}  and {bin_size} output classes."
-    )
+    net = torch.compile(net)
 
-    # Resume from existing model
-    if config["resume"] != "":
-        print(f"Resuming from weights: {config['resume']}")
-        net.load_weights(config["resume"])
+    if args.model == "ctm":
+        net.register_forward_pre_hook(clamp_decay_params) # type: ignore
 
-    filename = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}.csv"
-    save_model_path_base = f"mlx_{opt}_{lr}_{batch_size}_{num_layers}_{num_heads}_{embedding_dim}_{bin_size}_{vocab_size}"
+    num_params = sum(p.numel() for p in net.parameters()) # type: ignore
+    print(f"Model parameters {num_params:,}")
+    config_dict["num_params"] = num_params
 
-    train(
+    optimizer, scheduler = get_optimizer(config, net)
+
+    os.makedirs(config.save_dir, exist_ok=True)
+    shutil.copy(args.config, config.save_dir)
+
+    wandb.init(project="chessNet", config=config_dict)
+    print("Training on device:", device)
+    test_loss, test_acc, lax_test_acc = train(
         model=net,
-        bin_size=bin_size,
-        train_dset_path="datasetGen/train.db",
-        val_dset_path="datasetGen/val.db",
+        model_type=args.model,
+        config=config,
         optimizer=optimizer,
-        lr_warmup=lr_warmup,
-        learning_rate=lr,
-        loss_fn=classification_loss_fn if bin_size > 1 else regression_loss_fn,
-        eval_fn=classification_eval_fn if bin_size > 1 else r2_regression_eval_fn,
-        lax_eval_fn=classification_k3_eval_fn if bin_size > 1 else None,
-        nepochs=nepochs,
-        batch_size=batch_size,
-        save_every=config["save_every"],
-        save_model_path_base=save_model_path_base,
-        log_path=filename,
-        log_interval=5,
+        scheduler=scheduler,
     )
+    wandb.log({"test_loss": test_loss, "test_acc": test_acc, "lax_test_acc": lax_test_acc})

@@ -1,9 +1,12 @@
+# Balances a chess positions database such that there are an equal amount of
+# positions for each win probability bin.
+
 import sqlite3
 from tqdm import tqdm
 
 bucket_size = 0.05
-input_db = "datasetV2/pgn_dbs/all.db"
-output_db = "datasetV2/pgn_dbs/balanced.db"
+input_db = "all.db"
+output_db = "balanced.db"
 num_buckets = int(1 / bucket_size)
 
 input_conn = sqlite3.connect(input_db)

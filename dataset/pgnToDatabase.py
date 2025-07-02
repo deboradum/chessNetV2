@@ -132,36 +132,6 @@ def create_db_no_evals(filepath, db_path, skip_early_game=False):
     conn.close()
 
 
-def shuffle_database(db_name, table_name):
-    try:
-        conn = sqlite3.connect(db_name)
-        cursor = conn.cursor()
-
-        temp_table_name = f"{table_name}_shuffled"
-
-        cursor.execute(f"""
-            CREATE TABLE {temp_table_name} AS
-            SELECT * FROM {table_name} ORDER BY RANDOM();
-        """)
-
-        # Backup the original table
-        backup_table_name = f"{table_name}_backup"
-        cursor.execute(f"ALTER TABLE {table_name} RENAME TO {backup_table_name};")
-
-        cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {table_name};")
-        conn.commit()
-
-        print(
-            f"Table '{table_name}' has been shuffled successfully. "
-            f"Original table is backed up as '{backup_table_name}'."
-        )
-    except sqlite3.Error as e:
-        print(f"An error occurred: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
-
-
 def evalulate_db(db_path):
     stockfish = Stockfish(
         "/opt/homebrew/bin/stockfish", depth=15, parameters={"Threads": 4}
@@ -271,91 +241,6 @@ def merge_dbs(source_dbs, new_db):
     dest_conn.close()
 
 
-# def split_database(input_db, train_games, eval_games, test_games, hptune_games):
-#     conn = sqlite3.connect(input_db)
-#     cursor = conn.cursor()
-
-#     train_conn = create_database("train.db")
-#     val_conn = create_database("val.db")
-#     test_conn = create_database("test.db")
-#     hptune_conn = create_database("hptune.db")
-
-#     train_count, val_count, test_count, hptune_count = 0, 0, 0, 0
-#     batch_size = 65536
-
-#     cursor.execute("SELECT COUNT(*) FROM positions")
-#     total_rows = cursor.fetchone()[0]
-
-#     cursor.execute("SELECT * FROM positions")
-#     with tqdm.tqdm(total=total_rows, desc="Splitting databases") as pbar:
-#         while True:
-#             rows = cursor.fetchmany(batch_size)
-
-#             for idx, row in enumerate(rows):
-#                 (
-#                     _,
-#                     _,
-#                     _,
-#                     stockfish_eval_20,
-#                     stockfish_win_perc_20,
-#                 ) = row
-
-#                 # Randomly assign to one of the three databases
-#                 train_game_num_start, train_game_num_end = train_games
-#                 if game_num >= train_game_num_start and game_num <= train_game_num_end:
-#                     train_count += 1
-#                     train_conn.execute(
-#                         "INSERT INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
-#                         row,
-#                     )
-#                 eval_game_num_start, eval_game_num_end = eval_games
-#                 if game_num >= eval_game_num_start and game_num <= eval_game_num_end:
-#                     # 10% chance for validation
-#                     val_count += 1
-#                     val_conn.execute(
-#                         "INSERT INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
-#                         row,
-#                     )
-#                 test_game_num_start, test_game_num_end = test_games
-#                 if game_num >= test_game_num_start and game_num <= test_game_num_end:
-#                     # 10% chance for test
-#                     test_count += 1
-#                     test_conn.execute(
-#                         "INSERT INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
-#                         row,
-#                     )
-#                 hptune_game_num_start, hptune_game_num_end = hptune_games
-#                 if game_num >= hptune_game_num_start and game_num <= hptune_game_num_end:
-#                     hptune_count += 1
-#                     hptune_conn.execute(
-#                         "INSERT INTO positions (fen, padded_fen, padded_ascii_codes, stockfish_eval_20, stockfish_win_perc_20) VALUES (?, ?, ?, ?, ?)",
-#                         row,
-#                     )
-
-#                 if (idx + 1) % batch_size == 0:
-#                     train_conn.commit()
-#                     val_conn.commit()
-#                     test_conn.commit()
-#                     hptune_conn.commit()
-#             pbar.update(len(rows))
-
-#     # Final commit for any remaining rows
-#     train_conn.commit()
-#     val_conn.commit()
-#     test_conn.commit()
-
-#     # Close all connections
-#     train_conn.close()
-#     val_conn.close()
-#     test_conn.close()
-#     conn.close()
-
-#     print(f"Total entries: {len(rows)}")
-#     print(
-#         f"Train entries: {train_count}, Validation entries: {val_count}, Test entries: {test_count}, hptune count: {hptune_count}"
-#     )
-
-
 def get_all_ext_files_in_dir(dir_name, ext=".pgn"):
     all_files = []
     for root, _, files in os.walk(dir_name):
@@ -365,30 +250,11 @@ def get_all_ext_files_in_dir(dir_name, ext=".pgn"):
     return all_files
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # -----------
 
-
 STOCKFISH_PATH = "/usr/local/bin/stockfish"
-DB_PATH = "pgn_dbs/lichess_db_standard_rated_2025-03.db"
-CHUNK_SIZE = 500  # Adjust based on your evaluation speed and memory
+DB_PATH = "lichess_db_standard_rated_2025-03.db"
+CHUNK_SIZE = 500
 
 
 def init_stockfish():
@@ -438,10 +304,10 @@ def evaluate_db_parallel(db_path):
 
     # Split into chunks
     chunks = [fens[i : i + CHUNK_SIZE] for i in range(0, len(fens), CHUNK_SIZE)]
-    
+
     print("deleting fens")
     del fens
-    
+
     start_time = time.perf_counter()
     with Pool(processes=7) as pool:
         pool.map(evaluate_chunk, chunks)
@@ -485,14 +351,4 @@ if __name__ == "__main__":
     # print(dbs[:3])
     # complete_path = "all.db"
     # merge_dbs(dbs, complete_path)
-
-    # # Split database into train, test, val set
-    # train_games = (0, 900899)
-    # eval_games = (900900, 950949)
-    # test_games = (950950, 1000999)
-    # hptune_games = (0, 100000)
-    # split_database("all.db", train_games, eval_games, test_games, hptune_games)
-
-    # # Shuffle database
-    # db_path = "train.db"
-    # shuffle_database(db_path, "positions")
+xw

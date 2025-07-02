@@ -1,10 +1,21 @@
 import time
+import yaml
 import chess
+import torch
+import argparse
+import traceback
 
-import mlx.core as mx
+from train import Config
+from model import ChessNet
+from datasetGen.pgnToDatabase import pad_fen
 
-from Model import ChessNet
-from datasetGen.createDataset import pad_fen
+device = torch.device(
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+)
 
 
 def board_after_move(board, move):
@@ -24,7 +35,8 @@ def board_to_input_(board):
 
 class Engine:
     def __init__(self, model, verbose=False):
-        self.model = model
+        self.model = model.to(device)
+        self.model.eval()
         self.verbose = verbose
 
     def get_best_move(self, fen):
@@ -42,18 +54,24 @@ class Engine:
         if self.verbose:
             print(f"Found {len(legal_moves)} legal moves")
 
-        boards_after_moves = mx.stack(
-            [mx.array(board_to_input_(board_after_move(board, m))) for m in legal_moves]
-        )
+        boards_after_moves = torch.stack(
+            [
+                torch.tensor(board_to_input_(board_after_move(board, m)))
+                for m in legal_moves
+            ]
+        ).to(device)
 
-        logits = self.model(boards_after_moves)
-        # Get most likely win chance
-        win_chance_per_move = mx.argmax(logits, axis=1)
+        with torch.no_grad():
+            logits = self.model(boards_after_moves)
+        # Get most likely win chance (from the perspective of the opponent)
+        win_chance_per_move = torch.argmax(logits, dim=1)
         if self.verbose:
             print("Found", win_chance_per_move, win_chance_per_move.shape)
+            for m, p in zip(legal_moves, win_chance_per_move):
+                print(f"{m}, {p/config.num_classes}%")
 
         # Best move is the move with the lowest win chance for the opponent.
-        best_move = legal_moves[int(mx.argmin(win_chance_per_move))]
+        best_move = legal_moves[int(torch.argmin(win_chance_per_move))]
 
         if self.verbose:
             print("Move with the best win chance:", best_move)
@@ -68,14 +86,37 @@ class Engine:
 
 
 if __name__ == "__main__":
-    net = ChessNet(4, 4, 128, 1024, 128)
-    net.load_weights("best.npz")
-    e = Engine(net, verbose=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config", type=str, help="Path to config file", required=False
+    )
+    parser.add_argument(
+        "--checkpoint", type=str, help="Path to checkpoint file", required=True
+    )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    args = parser.parse_args()
+    with open(args.config, "r") as f:
+        config_dict = yaml.safe_load(f)
+        config = Config(**config_dict)
+
+    net = ChessNet(
+        num_layers=config.num_layers,
+        num_heads=config.num_heads,
+        vocab_size=config.vocab_size,
+        embed_dim=config.embedding_dim,
+        num_classes=config.num_classes,
+        rms_norm=True,
+    )
+    net.load_state_dict(
+        torch.load(args.checkpoint, map_location=device, weights_only=True)
+    )
+    e = Engine(net, verbose=args.verbose)
 
     while True:
         f = input("\nType fen string: ")
         try:
             best_move = e.get_best_move(f)
             print(best_move)
-        except Exception as e:
-            print("Unexpected error:", e)
+        except Exception as err:
+            print("Unexpected error:", err)
+            traceback.print_exc()

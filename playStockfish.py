@@ -6,9 +6,9 @@ import chess
 import chess.pgn
 import argparse
 
-from EngineTorch import Engine
-from trainTorchV2 import Config
-from ModelTorch import ChessNet
+from engine import Engine
+from train import Config
+from ModelTransformer import ChessNet
 from stockfish import Stockfish
 
 device = torch.device(
