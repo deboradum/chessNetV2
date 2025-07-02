@@ -226,7 +226,7 @@ def train(
                 start = time.perf_counter()
                 model.eval()
                 eval_loss, eval_acc, lax_eval_acc = test(
-                    model, model_type, config, config.val_dset_path, num_batches=10
+                    model, model_type, config, config.val_dset_path, num_batches=1000
                 )
                 taken = time.perf_counter() - start
                 wandb.log(
@@ -351,6 +351,7 @@ if __name__ == "__main__":
     with torch.no_grad():
         _ = net(dummy_input)
 
+    print("Compiling network")
     net = torch.compile(net)
 
     if args.model == "ctm":
