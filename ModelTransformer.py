@@ -41,25 +41,44 @@ class TransformerBlock(nn.Module):
         self.tau = 0.4
         self.sqrt_tau = math.sqrt(1-self.tau)
 
+    # def forward(self, x):
+    #     b, seq_len, _ = x.size()
+
+    #     x_ln = self.norm1(x)
+
+    #     causal_mask = torch.triu(
+    #         torch.ones(seq_len, seq_len, device=x.device), diagonal=1
+    #     )
+    #     causal_mask = causal_mask.masked_fill(causal_mask == 1, float("-inf"))
+    #     x_f, _ = self.attention(x_ln, x_ln, x_ln, attn_mask=causal_mask)
+
+    #     # Section 2.2 from https://arxiv.org/abs/2502.05967
+    #     x = self.sqrt_tau * x + self.tau * x_f
+
+    #     x_ln = self.norm2(x)
+    #     x_f = self.feedForward(x_ln)
+
+    #     # Section 2.2 from https://arxiv.org/abs/2502.05967
+    #     x = self.sqrt_tau * x + self.tau * x_f
+
+    #     return x
+
     def forward(self, x):
         b, seq_len, _ = x.size()
-
-        x_ln = self.norm1(x)
 
         causal_mask = torch.triu(
             torch.ones(seq_len, seq_len, device=x.device), diagonal=1
         )
         causal_mask = causal_mask.masked_fill(causal_mask == 1, float("-inf"))
-        x_f, _ = self.attention(x_ln, x_ln, x_ln, attn_mask=causal_mask)
+        x_f, _ = self.attention(x, x, x, attn_mask=causal_mask)
 
         # Section 2.2 from https://arxiv.org/abs/2502.05967
-        x = self.sqrt_tau * x + self.tau * x_f
+        x = self.sqrt_tau * x + self.tau * self.norm1(x_f)
 
-        x_ln = self.norm2(x)
-        x_f = self.feedForward(x_ln)
+        x_f = self.feedForward(x)
 
         # Section 2.2 from https://arxiv.org/abs/2502.05967
-        x = self.sqrt_tau * x + self.tau * x_f
+        x = self.sqrt_tau * x + self.tau * self.norm2(x_f)
 
         return x
 
