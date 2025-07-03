@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class FeedForward(nn.Module):
@@ -24,12 +25,20 @@ class FeedForward(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, embedding_dim, num_heads, rms_norm=True):
         super().__init__()
+        self.num_heads = num_heads
+        self.embedding_dim = embedding_dim
+        self.head_dim = embedding_dim // num_heads
+
+        assert (
+            self.head_dim * self.num_heads == self.embedding_dim
+        ), "embedding_dim must be divisible by num_heads"
+
         self.norm1 = (
             nn.RMSNorm(embedding_dim) if rms_norm else nn.LayerNorm(embedding_dim)
         )
-        self.attention = nn.MultiheadAttention(
-            embedding_dim, num_heads, batch_first=True
-        )
+        self.qkv_proj = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)
+        self.out_proj = nn.Linear(embedding_dim, embedding_dim, bias=False)
+
         self.norm2 = (
             nn.RMSNorm(embedding_dim) if rms_norm else nn.LayerNorm(embedding_dim)
         )
@@ -42,11 +51,17 @@ class TransformerBlock(nn.Module):
 
         x_ln = self.norm1(x)
 
-        causal_mask = torch.triu(
-            torch.ones(seq_len, seq_len, device=x.device), diagonal=1
-        )
-        causal_mask = causal_mask.masked_fill(causal_mask == 1, float("-inf"))
-        x_f, _ = self.attention(x_ln, x_ln, x_ln, attn_mask=causal_mask)
+        q, k, v = self.qkv_proj(x_ln).chunk(3, dim=-1)
+
+        q = q.view(b, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(b, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(b, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        x_f = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+
+        # Reshape back to (batch_size, seq_len, embedding_dim)
+        x_f = x_f.transpose(1, 2).contiguous().view(b, seq_len, self.embedding_dim)
+        x_f = self.out_proj(x_f)
 
         x = x + x_f
 
