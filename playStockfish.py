@@ -7,8 +7,8 @@ import chess.pgn
 import argparse
 
 from engine import Engine
-from train import Config
-from ModelTransformer import ChessNet
+from configs import TransformerConfig, CTMConfig
+from train import get_model
 from stockfish import Stockfish
 
 device = torch.device(
@@ -82,6 +82,7 @@ def run_game(board, black, white, pgn_path=""):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("model", choices=["transformer", "ctm"])
     parser.add_argument(
         "--config", type=str, help="Path to config file", required=False
     )
@@ -90,21 +91,21 @@ if __name__ == "__main__":
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
+
     with open(args.config, "r") as f:
+        config:TransformerConfig|CTMConfig
         config_dict = yaml.safe_load(f)
-        config = Config(**config_dict)
+        if args.model == "transformer":
+            config = TransformerConfig(**config_dict)
+        elif args.model == "ctm":
+            config = CTMConfig(**config_dict)
+        else:
+            raise NotImplementedError()
 
     for elo in range(100, 3000, 100):
         stockfish = get_stockfish(10, elo)
 
-        net = ChessNet(
-            num_layers=config.num_layers,
-            num_heads=config.num_heads,
-            vocab_size=config.vocab_size,
-            embed_dim=config.embedding_dim,
-            num_classes=config.num_classes,
-            rms_norm=True,
-        ).to(device)
+        net = get_model(args.model, config)
         net.load_state_dict(
             torch.load(args.checkpoint, map_location=device, weights_only=True)
         )

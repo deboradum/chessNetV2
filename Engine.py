@@ -5,9 +5,9 @@ import torch
 import argparse
 import traceback
 
-from train import Config
-from model import ChessNet
-from datasetGen.pgnToDatabase import pad_fen
+from configs import TransformerConfig, CTMConfig
+from train import get_model
+from dataset.pgnToDatabase import pad_fen
 
 device = torch.device(
     "cuda"
@@ -87,6 +87,7 @@ class Engine:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("model", choices=["transformer", "ctm"])
     parser.add_argument(
         "--config", type=str, help="Path to config file", required=False
     )
@@ -96,17 +97,16 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
     with open(args.config, "r") as f:
+        config:TransformerConfig|CTMConfig
         config_dict = yaml.safe_load(f)
-        config = Config(**config_dict)
+        if args.model == "transformer":
+            config = TransformerConfig(**config_dict)
+        elif args.model == "ctm":
+            config = CTMConfig(**config_dict)
+        else:
+            raise NotImplementedError()
 
-    net = ChessNet(
-        num_layers=config.num_layers,
-        num_heads=config.num_heads,
-        vocab_size=config.vocab_size,
-        embed_dim=config.embedding_dim,
-        num_classes=config.num_classes,
-        rms_norm=True,
-    )
+    net = get_model(args.model, config)
     net.load_state_dict(
         torch.load(args.checkpoint, map_location=device, weights_only=True)
     )
