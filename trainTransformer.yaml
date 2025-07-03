@@ -1,5 +1,5 @@
-num_layers: 8
-num_heads: 8
+num_layers: 16
+num_heads: 16
 embedding_dim: 1024
 vocab_size: 128
 num_classes: 128
@@ -10,8 +10,8 @@ batch_size: 64
 target_batch_size: 1024
 seed: 99
 log_interval: 16
-warmup_epochs: 0
-warmup_learning_rate: 1.0e-6
+warmup_batches: 2500
+warmup_learning_rate: 0.0004
 learning_rate: 1.0e-3
 final_learning_rate: 1.2e-5
 weight_decay: 0.05
