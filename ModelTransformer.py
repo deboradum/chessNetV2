@@ -72,13 +72,12 @@ class TransformerBlock(nn.Module):
         causal_mask = causal_mask.masked_fill(causal_mask == 1, float("-inf"))
         x_f, _ = self.attention(x, x, x, attn_mask=causal_mask)
 
-        # Section 2.2 from https://arxiv.org/abs/2502.05967
-        x = self.sqrt_tau * x + self.tau * self.norm1(x_f)
+        x = x + self.norm1(x_f)
 
         x_f = self.feedForward(x)
 
         # Section 2.2 from https://arxiv.org/abs/2502.05967
-        x = self.sqrt_tau * x + self.tau * self.norm2(x_f)
+        x = x + self.norm2(x_f)
 
         return x
 
