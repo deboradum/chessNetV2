@@ -131,6 +131,7 @@ def train(
     global_step = 0
     global_batches = 0
     num_steps_per_epoch = None
+    scheduler = None
 
     accumulation_update_interval = config.target_batch_size // config.batch_size
     assert (
