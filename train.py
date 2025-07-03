@@ -130,6 +130,7 @@ def train(
     warmup_lr = config.warmup_learning_rate
     initial_lr = config.learning_rate
     global_step = 0
+    global_batches = 0
 
     accumulation_update_interval = config.target_batch_size // config.batch_size
     assert (
@@ -140,16 +141,8 @@ def train(
     )
 
     for epoch in range(config.nepochs):
-        if epoch < config.warmup_epochs:
-            print("Warmup epoch")
-            # Linear warmup
-            lr = warmup_lr + (initial_lr - warmup_lr) * (epoch / config.warmup_epochs)
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = lr
-        else:
-            # If no warmup is used, do not call scheduler.step before training the first epoch.
-            if epoch:
-                scheduler.step()
+        if epoch:
+            scheduler.step()
 
         model.train()
         start = time.perf_counter()
@@ -157,6 +150,7 @@ def train(
         running_acc = 0.0
         running_lax_acc = 0.0
         current_lr = optimizer.param_groups[0]["lr"]
+
         for i, b in enumerate(
             dx.stream_python_iterable(
                 iterableFactory(config.train_dset_path, config.num_classes)
@@ -164,6 +158,14 @@ def train(
             .batch(config.batch_size)
             .shuffle(8192)
         ):
+            if global_batches < config.warmup_batches:
+                lr = warmup_lr + (initial_lr - warmup_lr) * (
+                    global_batches / config.warmup_batches
+                )
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = lr
+                current_lr = lr
+
             X, y = (torch.tensor(b["x"]).to(device), torch.tensor(b["y"]).to(device))
 
             with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
@@ -191,6 +193,7 @@ def train(
                 optimizer.zero_grad()
 
             global_step += config.batch_size
+            global_batches += 1
 
             if i and i % config.log_interval == 0:
                 taken = time.perf_counter() - start
@@ -220,6 +223,7 @@ def train(
                 running_acc = 0.0
                 running_lax_acc = 0.0
                 start = time.perf_counter()
+
             # Perform eval and save model every 1000 logging intervals
             if i % (config.log_interval * 1000) == 0:
                 print("Evaluating")
@@ -246,7 +250,7 @@ def train(
                 model.train()
                 start = time.perf_counter()
 
-        # In case any gradients remain
+        # In case any gradients remain at the end of an epoch
         if (i + 1) % accumulation_update_interval != 0:
             if config.gradient_clipping_norm != 0.0:
                 torch.nn.utils.clip_grad_norm_(
@@ -353,7 +357,6 @@ if __name__ == "__main__":
 
     print("Compiling network")
     net = torch.compile(net)
-
     if args.model == "ctm":
         net.register_forward_pre_hook(clamp_decay_params) # type: ignore
 

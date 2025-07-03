@@ -19,7 +19,7 @@ class CTMConfig:
     batch_size: int = 64
     target_batch_size: int = 1024
     nepochs: int = 10
-    warmup_epochs: int = 1
+    warmup_batches: int = 2500
     warmup_learning_rate: float = 1e-6
     learning_rate: float = 1.2e-3
     final_learning_rate: float = 1.2e-5
@@ -48,7 +48,7 @@ class TransformerConfig:
     batch_size: int = 64
     target_batch_size: int = 1024
     nepochs: int = 10
-    warmup_epochs: int = 1
+    warmup_batches: int = 2500
     warmup_learning_rate: float = 1e-6
     learning_rate: float = 1.2e-3
     final_learning_rate: float = 1.2e-5
