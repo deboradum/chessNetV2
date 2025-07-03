@@ -125,12 +125,12 @@ def train(
     model_type,
     config: TransformerConfig|CTMConfig,
     optimizer,
-    scheduler,
 ):
     warmup_lr = config.warmup_learning_rate
     initial_lr = config.learning_rate
     global_step = 0
     global_batches = 0
+    num_steps_per_epoch = None
 
     accumulation_update_interval = config.target_batch_size // config.batch_size
     assert (
@@ -141,8 +141,14 @@ def train(
     )
 
     for epoch in range(config.nepochs):
-        if epoch:
-            scheduler.step()
+        if epoch == 1:
+            total_training_steps = num_steps_per_epoch * config.nepochs
+            scheduler_duration_steps = total_training_steps - config.warmup_steps
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer=optimizer,
+                T_max=scheduler_duration_steps,
+                eta_min=config.final_learning_rate,
+            )
 
         model.train()
         start = time.perf_counter()
@@ -165,6 +171,8 @@ def train(
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = lr
                 current_lr = lr
+            elif scheduler:
+                scheduler.step()
 
             X, y = (torch.tensor(b["x"]).to(device), torch.tensor(b["y"]).to(device))
 
@@ -250,8 +258,11 @@ def train(
                 model.train()
                 start = time.perf_counter()
 
+        if epoch == 0:
+            num_steps_per_epoch = i + 1
+
         # In case any gradients remain at the end of an epoch
-        if (i + 1) % accumulation_update_interval != 0:
+        if num_steps_per_epoch % accumulation_update_interval != 0:
             if config.gradient_clipping_norm != 0.0:
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), config.gradient_clipping_norm
@@ -267,19 +278,14 @@ def get_optimizer(config: TransformerConfig|CTMConfig, net):
     if config.optimizer == "AdamW":
         optimizer = optim.AdamW(
             net.parameters(),
-            lr=config.warmup_learning_rate if config.warmup_epochs else config.learning_rate,
+            lr=config.warmup_learning_rate if config.warmup_batches else config.learning_rate,
             weight_decay=config.weight_decay,
             betas=(config.beta_1, config.beta_2),
-        )
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer=optimizer,
-            T_max=config.nepochs - config.warmup_epochs,
-            eta_min=config.final_learning_rate,
         )
     else:
         raise NotImplementedError
 
-    return optimizer, scheduler
+    return optimizer
 
 
 def get_model(model_type, config:TransformerConfig|CTMConfig):
@@ -364,7 +370,7 @@ if __name__ == "__main__":
     print(f"Model parameters {num_params:,}")
     config_dict["num_params"] = num_params
 
-    optimizer, scheduler = get_optimizer(config, net)
+    optimizer = get_optimizer(config, net)
 
     os.makedirs(config.save_dir, exist_ok=True)
     shutil.copy(args.config, config.save_dir)
@@ -376,6 +382,5 @@ if __name__ == "__main__":
         model_type=args.model,
         config=config,
         optimizer=optimizer,
-        scheduler=scheduler,
     )
     wandb.log({"test_loss": test_loss, "test_acc": test_acc, "lax_test_acc": lax_test_acc})
