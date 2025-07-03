@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 
@@ -54,7 +53,7 @@ class TransformerBlock(nn.Module):
         x_ln = self.norm2(x)
         x_f = self.feedForward(x_ln)
 
-        x = x * x_f
+        x = x + x_f
 
         return x
 
