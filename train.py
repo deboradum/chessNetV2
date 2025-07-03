@@ -199,9 +199,9 @@ def train(
                     )
                 optimizer.step()
                 optimizer.zero_grad()
-                global_batches += 1
 
             global_step += config.batch_size
+            global_batches += 1
 
             if i and i % config.log_interval == 0:
                 taken = time.perf_counter() - start
